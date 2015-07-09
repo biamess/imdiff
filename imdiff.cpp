@@ -52,6 +52,7 @@ const char *modestr[nmodes] = {
 	"Bleyer"}; // 0.1 * color diff + 0.9 * gradient diff
 
 const char *win = "imdiff";
+const char *winConf = "Confidence";
 float dx = 0;  // offset between images
 float dy = 0;
 float dgx = 0; // disparity gradient
@@ -66,6 +67,7 @@ int nccsize = 3;
 float ncceps = 1e-2f;
 int aggrsize = 1;
 int diffmin = 0; // 0 or 128 to clip negative response
+int pixshift = 1; // amount (in pixels) to shift the image by
 
 void printhelp()
 {
@@ -278,14 +280,14 @@ void printinfo(Mat img)
 	}
 }
 
-void dispPyr(Pyr pim)
+void dispPyr(const char *window, Pyr pim)
 {
 	Mat im = pyrImg(pim);
 	//im.convertTo(im, CV_8U);
 	if (im.channels() != 3)
 		cvtColor(im, im, CV_GRAY2BGR);
 	info(im);
-	imshow(win, im);
+	imshow(window, im);
 }
 
 // move rect within bounds w, h, return whether moved
@@ -317,11 +319,13 @@ void imdiff()
 	Mat im1t;
 	warpAffine(im1, im1t, T1, im1.size());
 	buildPyramid(im1t, pyr1, pyrlevels);
+	
 	for (int i = 0; i <= pyrlevels; i++) {
 		imdiff(pyr0[i], pyr1[i], pyrd[i]);
 	}
 	//printinfo(pyrd[0]);
-	dispPyr(pyrd);
+	dispPyr(win, pyrd);
+	
 }
 
 static void onMouse( int event, int x, int y, int flags, void* )
@@ -358,6 +362,63 @@ void shiftROI(int ddx, int ddy) {
 		imdiff();
 	}
 }
+
+void computeConf(){
+	Mat im1Copy, im1LShift, im1RShift;
+	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrCM, pyrCP, pyrConf;
+	im1Copy = pyr1[0].clone();
+
+	pyrRDiff.resize(pyrlevels+1);
+	pyrLDiff.resize(pyrlevels+1);
+	pyrCM.resize(pyrlevels+1);
+	pyrCP.resize(pyrlevels+1);
+	pyrConf.resize(pyrlevels+1);
+
+	Mat LShift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
+	Mat RShift = (Mat_<float>(2,3) << 1, 0, pixshift, 0, 1, 0);
+	warpAffine(im1Copy, im1LShift, LShift, im1Copy.size());
+	warpAffine(im1Copy, im1RShift, RShift, im1Copy.size());
+
+	buildPyramid(im1LShift, pyrL, pyrlevels);
+	buildPyramid(im1RShift, pyrR, pyrlevels);
+
+	
+	for (int i = 0; i <= pyrlevels; i++) {
+		imdiff(pyr0[i], pyrL[i], pyrLDiff[i]);
+		imdiff(pyr0[i], pyrR[i], pyrRDiff[i]);
+	}
+
+	for (int i = 0; i <= pyrlevels; i++) {
+		absdiff(pyrd[i], pyrLDiff[i], pyrCM[i]);
+		absdiff(pyrd[i], pyrRDiff[i], pyrCP[i]);
+	}
+
+	for (int i = 0; i <= pyrlevels; i++) {
+		
+		Mat CMMask = (pyrCM[i] < pyrCP[i]);
+		Mat CPMask = (pyrCP[i] < pyrCM[i]);
+		CMMask /= 255.0;
+		CPMask/= 255.0;
+		Mat minCM = CMMask.mul(pyrCM[i]);
+		Mat minCP = CPMask.mul(pyrCP[i]);
+
+		pyrConf[i] = minCM + minCP + 127;
+
+	}
+
+	dispPyr(winConf, pyrConf);
+
+}
+
+/*
+void min(Mat mat1, Mat mat2, Mat &dest){
+
+	int width = mat1.size().width, height = mat1.size().height;
+	for (int i=0; i < width*height; ++i) {
+            mat1.at<>;
+	}
+
+}*/
 
 void mainLoop()
 {
@@ -396,11 +457,13 @@ void mainLoop()
 		case ' ': // reset
 			dx = 0; dy = 0; dgx = 0; diffscale = 1; nccsize = 3; imdiff(); break;
 		case 'a': // show original left image
-			dispPyr(pyr0); break;
+			dispPyr(win, pyr0); break;
 		case 's': // show transformed right image
-			dispPyr(pyr1); break;
+			dispPyr(win, pyr1); break;
 		case 'd': // back to diff
 			imdiff(); break;
+		case 'w': // display confidence image
+			computeConf(); break;
 		case 'z': // decrease contrast
 			if (mode==0) {diffscale /= 1.5; imdiff();} break;
 		case 'x': // increase contrast

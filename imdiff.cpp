@@ -402,7 +402,7 @@ void computeConf(){
 		Mat minCM = CMMask.mul(pyrCM[i]);
 		Mat minCP = CPMask.mul(pyrCP[i]);
 
-		pyrConf[i] = minCM + minCP + 127;
+		pyrConf[i] = minCM + minCP;
 
 	}
 

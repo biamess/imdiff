@@ -398,7 +398,7 @@ void computeConf(){
 		Mat CMMask = (pyrCM[i] < pyrCP[i]);
 		Mat CPMask = (pyrCP[i] < pyrCM[i]);
 		CMMask /= 255.0;
-		CPMask/= 255.0;
+		CPMask /= 255.0;
 		Mat minCM = CMMask.mul(pyrCM[i]);
 		Mat minCP = CPMask.mul(pyrCP[i]);
 
@@ -410,15 +410,6 @@ void computeConf(){
 
 }
 
-/*
-void min(Mat mat1, Mat mat2, Mat &dest){
-
-	int width = mat1.size().width, height = mat1.size().height;
-	for (int i=0; i < width*height; ++i) {
-            mat1.at<>;
-	}
-
-}*/
 
 void mainLoop()
 {

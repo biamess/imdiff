@@ -363,49 +363,71 @@ void shiftROI(int ddx, int ddy) {
 	}
 }
 
+//compute and display visualization of confidence measure
 void computeConf(){
 	Mat im1Copy, im1LShift, im1RShift;
 	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrCM, pyrCP, pyrConf;
 	im1Copy = pyr1[0].clone();
 
+	//initialize pyramids to correct size:
 	pyrRDiff.resize(pyrlevels+1);
 	pyrLDiff.resize(pyrlevels+1);
 	pyrCM.resize(pyrlevels+1);
 	pyrCP.resize(pyrlevels+1);
 	pyrConf.resize(pyrlevels+1);
 
+	//create matrices to shift the image by 1 pixshift to the right and left
 	Mat LShift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
 	Mat RShift = (Mat_<float>(2,3) << 1, 0, pixshift, 0, 1, 0);
+
+	//shift the image to the right and left
 	warpAffine(im1Copy, im1LShift, LShift, im1Copy.size());
 	warpAffine(im1Copy, im1RShift, RShift, im1Copy.size());
 
+	//create image pyramids from the shifted images
 	buildPyramid(im1LShift, pyrL, pyrlevels);
 	buildPyramid(im1RShift, pyrR, pyrlevels);
 
-	
+	//compute the matching costs between the images in the shifted pyramids
+	//and the bottom image
 	for (int i = 0; i <= pyrlevels; i++) {
 		imdiff(pyr0[i], pyrL[i], pyrLDiff[i]);
 		imdiff(pyr0[i], pyrR[i], pyrRDiff[i]);
 	}
 
+	//compute the absolute difference between the matching costs for the images
+	//in the shifted pyramids and the matching cost of the pyramid at the current
+	//disparity 
 	for (int i = 0; i <= pyrlevels; i++) {
 		absdiff(pyrd[i], pyrLDiff[i], pyrCM[i]);
 		absdiff(pyrd[i], pyrRDiff[i], pyrCP[i]);
 	}
 
+	//identify the min of the absolute differences computed above and
+	//store that in a new confidence pyramid
 	for (int i = 0; i <= pyrlevels; i++) {
 		
-		Mat CMMask = (pyrCM[i] < pyrCP[i]);
-		Mat CPMask = (pyrCP[i] < pyrCM[i]);
+		Mat CMMask = (pyrCM[i] < pyrCP[i]); //mask for the CM image - 255's where the CM image holds the min,
+											//zeros elsewhere
+		Mat CPMask = (pyrCP[i] < pyrCM[i]); //mask for the CP image - 255's where the CP image holds the min
+		//scale the values in the masks so that the 255's become 1's
 		CMMask /= 255.0;
 		CPMask /= 255.0;
-		Mat minCM = CMMask.mul(pyrCM[i]);
+
+		//do element-wise multiplication between the masks and the absdiff matrices
+		//to produce matrices that hold the minimum value where the mask had a 1 and zeroes elsewhere
+		Mat minCM = CMMask.mul(pyrCM[i]); 
 		Mat minCP = CPMask.mul(pyrCP[i]);
 
+		//add the matrices computed above so that we have the min values at each cell
+		//(where one matrix held a min value, the other will hold a zero since
+		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
+		//not both)
 		pyrConf[i] = minCM + minCP;
 
 	}
 
+	//display the confidence measure in a new window
 	dispPyr(winConf, pyrConf);
 
 }

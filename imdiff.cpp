@@ -5,6 +5,7 @@
 * added github control 6/17/2013
 * added computation on image pyramids 6/18/2013
 * made to compile on Macs and Linux 6/4/2015
+* added confidence computation and GT image warping 7/10/15
 */
 
 /* This visual studio project requires two windows environment variables to be set.  Example:
@@ -26,6 +27,7 @@ int cygwinbug = 0;
 
 #include <stdio.h>
 #include "opencv2/opencv.hpp"
+#include "ImageIOpfm.h"
 
 #if defined(__linux__) || defined(__APPLE__)
 #define sprintf_s snprintf
@@ -39,6 +41,7 @@ typedef vector<Mat> Pyr;
 Mat oim0, oim1;       // original images
 Rect roi;             // cropping rectangle
 Mat im0, im1;         // cropped images
+Mat gtd;			  // ground truth disparity
 Pyr pyr0, pyr1, pyrd; // image pyramids of cropped regions
 
 int pyrlevels = 0;  // levels in pyramid (will be determined based on cropped image size)
@@ -80,6 +83,8 @@ void printhelp()
 		"Space - reset offset\n"
 		"A, S  - show (blink) orig images\n"
 		"D     - show diff\n"
+		"W 	   - show GT warped image 2\n"
+		"+     - show confidence measure\n"
 		"1-4 - change mode:\n"
 		"  1 - color diff\n"
 		"  2 - NCC\n"
@@ -363,6 +368,8 @@ void shiftROI(int ddx, int ddy) {
 	}
 }
 
+
+//added by Matt Stanley & Bianca Messner 7/10/2015
 //compute and display visualization of confidence measure
 void computeConf(){
 	Mat im1Copy, im1LShift, im1RShift;
@@ -432,6 +439,65 @@ void computeConf(){
 
 }
 
+//added by Matt Stanley & Bianca Messner 7/10/2015
+void warpByGT(){
+	if(gtd.empty()){
+		cout << "No Ground Truth image specified" << endl;
+		return;
+	}
+
+	int w = oim1.size().width;
+	int h = oim1.size().height;
+	Mat map = Mat_<Point_<float> >(h, w);
+	Mat warped, emptyMap;
+	float gtValue;
+
+
+	for(int i=0; i<h; ++i)
+	{
+		for (int j=0; j < w; ++j)
+		{
+			gtValue = (gtd.at<float>(i, j));
+			if (!((j+gtValue) > w)){ // if not out of bounds...
+				map.at<Point_<float> >(i, j+gtValue) = Point(j, i); //store the coordinates of the point in the 
+														   //source image that contains the pixel we want in
+														   //the destination image
+			}
+		}
+
+	}
+
+	remap(oim1, warped, map, emptyMap, INTER_LINEAR);
+
+	//warped /= 255.0;
+
+	
+	imshow("gtd", gtd/255.0);
+	
+	/*
+	cout << "gtd w x h: " << gtd.size().width << " x " << gtd.size().height << endl;
+	cout << "oim1 w x h: " << oim1.size().width << " x " << oim1.size().height << endl;
+	*/
+
+	im1 = warped(roi);
+	//imshow("warp", im1);
+
+	Pyr pyrim1, pyrdtest;
+	pyrdtest.resize(pyrlevels+1);
+	buildPyramid(im1, pyrim1, pyrlevels);
+	
+	for (int i = 0; i <= pyrlevels; i++) {
+		imdiff(pyr0[i], pyrim1[i], pyrdtest[i]);
+	}
+	dispPyr(winConf, pyrdtest);
+
+	/*
+	map.at<Point>(2,1) = Point(1, 2);
+	cout << format(map,"python") << endl;
+	*/
+
+}
+
 
 void mainLoop()
 {
@@ -475,8 +541,10 @@ void mainLoop()
 			dispPyr(win, pyr1); break;
 		case 'd': // back to diff
 			imdiff(); break;
-		case 'w': // display confidence image
+		case '+': // display confidence image
 			computeConf(); break;
+		case 'w':
+			warpByGT(); break;
 		case 'z': // decrease contrast
 			if (mode==0) {diffscale /= 1.5; imdiff();} break;
 		case 'x': // increase contrast
@@ -546,7 +614,7 @@ int main(int argc, char ** argv)
 	setvbuf(stdout, (char*)NULL, _IONBF, 0); // fix to flush stdout when called from cygwin
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: %s im1 im2 [decimationFact [offsx [offsy]]]\n", argv[0]);
+		fprintf(stderr, "usage: %s im1 im2 [groundtruthim2 [decimationFact [offsx [offsy]]]\n", argv[0]);
 		exit(1);
 	}
 	try {
@@ -554,14 +622,17 @@ int main(int argc, char ** argv)
 		oim1 = readIm(argv[2]);
 		ensureSameSize(oim0, oim1);
 
+
 		int downsample = 1; // use 2 for half-size, etc.
 		int offsx = -1, offsy = -1;
 		if (argc > 3)
-			downsample = atoi(argv[3]);
+			ReadFilePFM(gtd, argv[3]);
 		if (argc > 4)
-			offsx = atoi(argv[4]);
+			downsample = atoi(argv[4]);
 		if (argc > 5)
-			offsy = atoi(argv[5]);
+			offsx = atoi(argv[5]);
+		if (argc > 6)
+			offsy = atoi(argv[6]);
 
 		// downsample images
 		if (downsample > 1) {

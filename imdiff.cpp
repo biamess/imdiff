@@ -373,7 +373,7 @@ void shiftROI(int ddx, int ddy) {
 //compute and display visualization of confidence measure
 void computeConf(){
 	Mat im1Copy, im1LShift, im1RShift;
-	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCM, pyrPreCP, pyrCM, pyrCP, pyrConf;
+	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCM, pyrPreCP, pyrCM, pyrCP, pyrConf, pyrdcorr;
 	im1Copy = pyr1[0].clone();
 
 	//initialize pyramids to correct size:
@@ -384,6 +384,8 @@ void computeConf(){
 	pyrCM.resize(pyrlevels+1);
 	pyrCP.resize(pyrlevels+1);
 	pyrConf.resize(pyrlevels+1);
+	pyrdcorr.resize(pyrlevels+1);
+
 
 	//create matrices to shift the image by 1 pixshift to the right and left
 	Mat LShift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
@@ -409,20 +411,24 @@ void computeConf(){
 	//disparity 
 	for (int i = 0; i <= pyrlevels; i++) {
 
+		pyrdcorr[i] = abs(pyrd[i] - 128);
+		if(i == 0)
+			cout << format(pyrdcorr[0], "Python") << endl;
+
 		//identify the pixels for which the current disparity yields a local minimum in matching costs
 		//create masks for the left and right images so that we can have 0 confidence
 		//at the pixels for which the current disparity is not a local minimum
-		Mat LMask = (pyrd[i] < pyrL[i]); //mask for the L image - 255's where the d image holds the min,
+		Mat LMask = (pyrdcorr[i] < pyrLDiff[i]); //mask for the L image - 255's where the d image holds the min,
 									  	  //zeros elsewhere
-		Mat RMask = (pyrd[i] < pyrR[i]); //mask for the R image - 255's where the d image holds the min,
+		Mat RMask = (pyrdcorr[i] < pyrRDiff[i]); //mask for the R image - 255's where the d image holds the min,
 									      //zeros elsewhere
 		//scale the values in the masks so that the 255's become 1's
 		LMask /= 255.0;
 		RMask /= 255.0;
 
 		//compute absolute differences
-		absdiff(pyrd[i], pyrLDiff[i], pyrPreCM[i]);
-		absdiff(pyrd[i], pyrRDiff[i], pyrPreCP[i]);
+		absdiff(pyrdcorr[i], pyrLDiff[i], pyrPreCM[i]);
+		absdiff(pyrdcorr[i], pyrRDiff[i], pyrPreCP[i]);
 
 		//mask out the values where the current disparity was not the minimum
 		//these will now hold zeroes, which will always be the minimum since the 
@@ -438,7 +444,7 @@ void computeConf(){
 		
 		Mat CMMask = (pyrCM[i] < pyrCP[i]); //mask for the CM image - 255's where the CM image holds the min,
 											//zeros elsewhere
-		Mat CPMask = (pyrCP[i] < pyrCM[i]); //mask for the CP image - 255's where the CP image holds the min
+		Mat CPMask = (pyrCP[i] <= pyrCM[i]); //mask for the CP image - 255's where the CP image holds the min
 		//scale the values in the masks so that the 255's become 1's
 		CMMask /= 255.0;
 		CPMask /= 255.0;
@@ -452,7 +458,7 @@ void computeConf(){
 		//(where one matrix held a min value, the other will hold a zero since
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
-		pyrConf[i] = minCM + minCP;
+		pyrConf[i] = (minCM + minCP);
 
 	}
 

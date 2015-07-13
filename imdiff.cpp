@@ -373,12 +373,14 @@ void shiftROI(int ddx, int ddy) {
 //compute and display visualization of confidence measure
 void computeConf(){
 	Mat im1Copy, im1LShift, im1RShift;
-	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrCM, pyrCP, pyrConf;
+	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCM, pyrPreCP, pyrCM, pyrCP, pyrConf;
 	im1Copy = pyr1[0].clone();
 
 	//initialize pyramids to correct size:
 	pyrRDiff.resize(pyrlevels+1);
 	pyrLDiff.resize(pyrlevels+1);
+	pyrPreCM.resize(pyrlevels+1);
+	pyrPreCP.resize(pyrlevels+1);
 	pyrCM.resize(pyrlevels+1);
 	pyrCP.resize(pyrlevels+1);
 	pyrConf.resize(pyrlevels+1);
@@ -406,8 +408,28 @@ void computeConf(){
 	//in the shifted pyramids and the matching cost of the pyramid at the current
 	//disparity 
 	for (int i = 0; i <= pyrlevels; i++) {
-		absdiff(pyrd[i], pyrLDiff[i], pyrCM[i]);
-		absdiff(pyrd[i], pyrRDiff[i], pyrCP[i]);
+
+		//identify the pixels for which the current disparity yields a local minimum in matching costs
+		//create masks for the left and right images so that we can have 0 confidence
+		//at the pixels for which the current disparity is not a local minimum
+		Mat LMask = (pyrd[i] < pyrL[i]); //mask for the L image - 255's where the d image holds the min,
+									  	  //zeros elsewhere
+		Mat RMask = (pyrd[i] < pyrR[i]); //mask for the R image - 255's where the d image holds the min,
+									      //zeros elsewhere
+		//scale the values in the masks so that the 255's become 1's
+		LMask /= 255.0;
+		RMask /= 255.0;
+
+		//compute absolute differences
+		absdiff(pyrd[i], pyrLDiff[i], pyrPreCM[i]);
+		absdiff(pyrd[i], pyrRDiff[i], pyrPreCP[i]);
+
+		//mask out the values where the current disparity was not the minimum
+		//these will now hold zeroes, which will always be the minimum since the 
+		//absdiff is always positive
+		pyrCM[i] = LMask.mul(pyrPreCM[i]); 
+		pyrCP[i] = RMask.mul(pyrPreCP[i]); 
+
 	}
 
 	//identify the min of the absolute differences computed above and

@@ -373,14 +373,17 @@ void shiftROI(int ddx, int ddy) {
 //compute and display visualization of confidence measure
 void computeConf(){
 	Mat im1Copy, im1LShift, im1RShift;
-	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCM, pyrPreCP, pyrCM, pyrCP, pyrConf, pyrdcorr;
+	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCMS, pyrPreCPS, pyrCMS, pyrCPS, pyrdS, pyrCM, pyrCP, pyrConf, pyrdcorr;
 	im1Copy = pyr1[0].clone();
 
 	//initialize pyramids to correct size:
 	pyrRDiff.resize(pyrlevels+1);
 	pyrLDiff.resize(pyrlevels+1);
-	pyrPreCM.resize(pyrlevels+1);
-	pyrPreCP.resize(pyrlevels+1);
+	pyrPreCMS.resize(pyrlevels+1);
+	pyrPreCPS.resize(pyrlevels+1);
+	pyrCMS.resize(pyrlevels+1);
+	pyrCPS.resize(pyrlevels+1);
+	pyrdS.resize(pyrlevels+1);
 	pyrCM.resize(pyrlevels+1);
 	pyrCP.resize(pyrlevels+1);
 	pyrConf.resize(pyrlevels+1);
@@ -404,67 +407,154 @@ void computeConf(){
 	for (int i = 0; i <= pyrlevels; i++) {
 		imdiff(pyr0[i], pyrL[i], pyrLDiff[i]);
 		imdiff(pyr0[i], pyrR[i], pyrRDiff[i]);
+
+		//corrected version of pyrd where 0 indicates perfect match
+		pyrdcorr[i] = abs(pyrd[i] - 128);
+
+		//copy values into pyramids to be used for single-channel matching cost
+		pyrCMS[i] = pyrLDiff[i].clone();
+		pyrCPS[i] = pyrRDiff[i].clone();
+		pyrdS[i] = pyrdcorr[i].clone();
 	}
 
 	//compute the absolute difference between the matching costs for the images
 	//in the shifted pyramids and the matching cost of the pyramid at the current
 	//disparity 
 	for (int i = 0; i <= pyrlevels; i++) {
+		//int initialRows = pyrCMS[i].size().height;
+		//int initialCols = pyrCMS[i].size().width;
 
-		pyrdcorr[i] = abs(pyrd[i] - 128);
-		if(i == 0)
-			cout << format(pyrdcorr[0], "Python") << endl;
+/*
+		Mat tempCMS = pyrCMS[i].clone();
+		Mat tempCPS = pyrCPS[i].clone();
+		Mat tempdS = pyrdS[i].clone();*/
+
+		Mat tempCMS = Mat::zeros(pyrCMS[i].size().height, pyrCMS[i].size().width, CV_32FC1);
+		Mat tempCPS = Mat::zeros(pyrCPS[i].size().height, pyrCPS[i].size().width, CV_32FC1);
+		Mat tempdS = Mat::zeros(pyrdS[i].size().height, pyrdS[i].size().width, CV_32FC1);
+
+		/*
+		//create single channel images
+		tempCMS.reshape(1, initialRows * initialCols);
+		tempCPS.reshape(1, initialRows * initialCols);
+		tempdS.reshape(1, initialRows * initialCols);
+		reduce(tempCMS, tempCMS, 1, CV_REDUCE_SUM, CV_32FC1);
+		reduce(tempCPS, tempCPS, 1, CV_REDUCE_SUM, CV_32FC1);
+		reduce(tempdS, tempdS, 1, CV_REDUCE_SUM, CV_32FC1);
+		cout << (tempdS.type() == CV_32FC3) << endl;
+		cout << (tempCPS.type() == CV_32FC3) << endl;
+		tempCMS.reshape(1, initialRows);
+		tempCPS.reshape(1, initialRows);
+		tempdS.reshape(1, initialRows);
+		*/
+		Mat tempCMSSplit[3];
+		Mat tempCPSSplit[3];
+		Mat tempdSSplit[3];
+		split(pyrCMS[i], tempCMSSplit);
+		split(pyrCPS[i], tempCPSSplit);
+		split(pyrdS[i], tempdSSplit);
+
+		for(int i=0; i < 3; ++i){
+			Mat CMSF;
+			Mat CPSF;
+			Mat dSF;
+
+			tempCMSSplit[i].convertTo(CMSF, CV_32FC1);
+			tempCPSSplit[i].convertTo(CPSF, CV_32FC1);
+			tempdSSplit[i].convertTo(dSF, CV_32FC1);
+
+			tempCMS += CMSF;
+			tempCPS += CPSF;
+			tempdS += dSF;
+
+		}
+
+
+		pyrCMS[i] = tempCMS;
+		pyrCPS[i] = tempCPS;
+		pyrdS[i] = tempdS;
+
+		//cout << pyrCMS[i].channels() << endl;
+
 
 		//identify the pixels for which the current disparity yields a local minimum in matching costs
 		//create masks for the left and right images so that we can have 0 confidence
 		//at the pixels for which the current disparity is not a local minimum
-		Mat LMask = (pyrdcorr[i] < pyrLDiff[i]); //mask for the L image - 255's where the d image holds the min,
+		Mat LMask = (pyrdS[i] < pyrCMS[i]); //mask for the L image - 255's where the d image holds the min,
 									  	  //zeros elsewhere
-		Mat RMask = (pyrdcorr[i] < pyrRDiff[i]); //mask for the R image - 255's where the d image holds the min,
+		Mat RMask = (pyrdS[i] < pyrCPS[i]); //mask for the R image - 255's where the d image holds the min,
 									      //zeros elsewhere
+
 		//scale the values in the masks so that the 255's become 1's
 		LMask /= 255.0;
 		RMask /= 255.0;
 
-		//compute absolute differences
-		absdiff(pyrdcorr[i], pyrLDiff[i], pyrPreCM[i]);
-		absdiff(pyrdcorr[i], pyrRDiff[i], pyrPreCP[i]);
+		//cout << "LMask channels: " << LMask.channels() << endl;
+
+		LMask.convertTo(LMask, CV_32FC1);
+		RMask.convertTo(RMask, CV_32FC1);
+
+		//compute absolute differences for 3 channel image
+		absdiff(pyrd[i], pyrLDiff[i], pyrCM[i]);
+		absdiff(pyrd[i], pyrRDiff[i], pyrCP[i]);
+
+
+		//compute absolute differences for single channel image
+		absdiff(pyrdS[i], pyrCMS[i], pyrPreCMS[i]);
+		absdiff(pyrdS[i], pyrCPS[i], pyrPreCPS[i]);
 
 		//mask out the values where the current disparity was not the minimum
 		//these will now hold zeroes, which will always be the minimum since the 
 		//absdiff is always positive
-		pyrCM[i] = LMask.mul(pyrPreCM[i]); 
-		pyrCP[i] = RMask.mul(pyrPreCP[i]); 
+		pyrCMS[i] = LMask.mul(pyrCMS[i]); 
+		pyrCPS[i] = RMask.mul(pyrCPS[i]);
 
 	}
-
+ 
 	//identify the min of the absolute differences computed above and
 	//store that in a new confidence pyramid
 	for (int i = 0; i <= pyrlevels; i++) {
 		
-		Mat CMMask = (pyrCM[i] < pyrCP[i]); //mask for the CM image - 255's where the CM image holds the min,
+		Mat CMMask = (pyrCMS[i] < pyrCPS[i]); //mask for the CM image - 255's where the CM image holds the min,
 											//zeros elsewhere
-		Mat CPMask = (pyrCP[i] <= pyrCM[i]); //mask for the CP image - 255's where the CP image holds the min
+		Mat CPMask = (pyrCPS[i] <= pyrCMS[i]); //mask for the CP image - 255's where the CP image holds the min
 		//scale the values in the masks so that the 255's become 1's
 		CMMask /= 255.0;
 		CPMask /= 255.0;
 
+		//cout << "CPMask channels: " << CPMask.channels() << endl;
+		
+		Mat CMMaskArr[] = {CMMask, CMMask, CMMask};
+		Mat CPMaskArr[] = {CPMask, CPMask, CPMask};
+		Mat CMMaskC3, CPMaskC3;
+
+
+		merge(CMMaskArr, 3, CMMaskC3);
+		merge(CPMaskArr, 3, CPMaskC3);
+		CMMaskC3.convertTo(CMMaskC3, pyrCM[i].type());
+		CPMaskC3.convertTo(CPMaskC3, pyrCP[i].type());
+		
+		//cout << "CPMaskC3 channels: " << CPMaskC3.channels() << endl;
+		//cout << format(CPMaskC3, "Python") << endl;
+
+		
+
+		
 		//do element-wise multiplication between the masks and the absdiff matrices
 		//to produce matrices that hold the minimum value where the mask had a 1 and zeroes elsewhere
-		Mat minCM = CMMask.mul(pyrCM[i]); 
-		Mat minCP = CPMask.mul(pyrCP[i]);
+		Mat minCM = CMMaskC3.mul(pyrCM[i]); 
+		Mat minCP = CPMaskC3.mul(pyrCP[i]);
 
 		//add the matrices computed above so that we have the min values at each cell
 		//(where one matrix held a min value, the other will hold a zero since
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
-		pyrConf[i] = (minCM + minCP);
-
+		pyrConf[i] = ((minCM + minCP) * 3);
+		
 	}
 
 	//display the confidence measure in a new window
 	dispPyr(winConf, pyrConf);
-
 }
 
 //added by Matt Stanley & Bianca Messner 7/10/2015

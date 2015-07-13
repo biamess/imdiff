@@ -1,6 +1,6 @@
 CC = g++
 CPPFLAGS = -O2 -W -Wall
-LDLIBS = -lopencv_core -lopencv_highgui -lopencv_imgproc
+LDLIBS = pfmLib.a -lopencv_core -lopencv_highgui -lopencv_imgproc
 
 BIN = imdiff
 all: $(BIN)

@@ -389,15 +389,13 @@ void computeConf(){
 	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
 	setMouseCallback(winConf, onMouse, (void*)winConf);
 
-	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS;
-	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCMS, pyrPreCPS, pyrCM, pyrCP, pyrConf;
+	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS, imAbsDCMS, imAbsDCPS;
+	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrCM, pyrCP, pyrConf;
 	im1Copy = pyr1[0].clone();
 
 	//initialize pyramids to correct size:
 	pyrRDiff.resize(pyrlevels+1);
 	pyrLDiff.resize(pyrlevels+1);
-	pyrPreCMS.resize(pyrlevels+1);
-	pyrPreCPS.resize(pyrlevels+1);
 	pyrCM.resize(pyrlevels+1);
 	pyrCP.resize(pyrlevels+1);
 	pyrConf.resize(pyrlevels+1);
@@ -486,22 +484,22 @@ void computeConf(){
 
 
 		//compute absolute differences for single channel image
-		absdiff(sumChannelsdS, sumChannelsCMS, pyrPreCMS[i]);
-		absdiff(sumChannelsdS, sumChannelsCPS, pyrPreCPS[i]);
+		absdiff(sumChannelsdS, sumChannelsCMS, imAbsDCMS);
+		absdiff(sumChannelsdS, sumChannelsCPS, imAbsDCPS);
 
 		//mask out the values where the current disparity was not the minimum
 		//these will now hold zeroes, which will always be the minimum since the 
 		//absdiff is always positive
-		sumChannelsCMS = LMask.mul(sumChannelsCMS); 
-		sumChannelsCPS = RMask.mul(sumChannelsCPS);
+		imAbsDCMS = LMask.mul(imAbsDCMS); 
+		imAbsDCPS = RMask.mul(imAbsDCPS);
 
  
 		//identify the min of the absolute differences computed above and
 		//store that in a new confidence pyramid
 		
-		Mat CMMask = (sumChannelsCMS < sumChannelsCPS); //mask for the CM image - 255's where the CM image holds the min,
+		Mat CMMask = (imAbsDCMS < imAbsDCPS); //mask for the CM image - 255's where the CM image holds the min,
 											//zeros elsewhere
-		Mat CPMask = (sumChannelsCPS <= sumChannelsCMS); //mask for the CP image - 255's where the CP image holds the min
+		Mat CPMask = (imAbsDCPS <= imAbsDCMS); //mask for the CP image - 255's where the CP image holds the min
 		//scale the values in the masks so that the 255's become 1's
 		CMMask /= 255.0;
 		CPMask /= 255.0;
@@ -612,7 +610,7 @@ void mainLoop()
 		case 'h':
 		case '?':
 			printhelp(); break;
-		case '-':
+		case 45:
 			destroyWindow(selectedWin); break;
 		case 2424832: case 65361: // left arrow
 			dx -= step; imdiff(); break;

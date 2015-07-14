@@ -36,6 +36,7 @@ int cygwinbug = 0;
 using namespace cv;
 using namespace std;
 
+
 typedef vector<Mat> Pyr;
 
 Mat oim0, oim1;       // original images
@@ -56,6 +57,7 @@ const char *modestr[nmodes] = {
 
 const char *win = "imdiff";
 const char *winConf = "Confidence";
+const char *selectedWin;	// currently selected window
 float dx = 0;  // offset between images
 float dy = 0;
 float dgx = 0; // disparity gradient
@@ -97,6 +99,7 @@ void printhelp()
 		"F, G  - change aggregation window size (modes 2-4)\n"
 		"JKLI  - move cropped region (large imgs only)\n"
 		"H , ? - help\n"
+		"(-)   - close current window\n"
 		"Esc, Q - quit\n");
 }
 
@@ -333,8 +336,17 @@ void imdiff()
 	
 }
 
-static void onMouse( int event, int x, int y, int flags, void* )
+// Added passing window name through param to get currently selected
+// window, so the user can close the selected window - Matt Stanley 7/14/2015
+static void onMouse( int event, int x, int y, int flags, void *param)
 {
+	const char* winID = (const char*)param;
+	if(winID == win){
+		selectedWin = win;
+	}else if(winID == winConf){
+		selectedWin = winConf;
+	}
+
 	x = (short)x; // seem to be short values passed in, cast needed for negative values during dragging
 	y = (short)y;
 	//printf("x=%d y=%d    ", x, y);
@@ -635,6 +647,8 @@ void mainLoop()
 		case 'h':
 		case '?':
 			printhelp(); break;
+		case '-':
+			destroyWindow(selectedWin); break;
 		case 2424832: case 65361: // left arrow
 			dx -= step; imdiff(); break;
 		case 2555904: case 65363: // right arrow
@@ -789,7 +803,10 @@ int main(int argc, char ** argv)
 		//printf("%d levels, smallest size = %d x %d\n", pyrlevels, im.cols, im.rows);
 
 		namedWindow(win, CV_WINDOW_AUTOSIZE);
-		setMouseCallback(win, onMouse);
+		namedWindow(winConf, CV_WINDOW_AUTOSIZE);
+		setMouseCallback(winConf, onMouse, (void*)winConf);
+		setMouseCallback(win, onMouse, (void*)win);
+		selectedWin = win;
 		imdiff();
 
 		mainLoop();

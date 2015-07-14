@@ -345,6 +345,7 @@ static void onMouse( int event, int x, int y, int flags, void *param)
 		selectedWin = win;
 	}else if(winID == winConf){
 		selectedWin = winConf;
+		return;
 	}
 
 	x = (short)x; // seem to be short values passed in, cast needed for negative values during dragging
@@ -384,6 +385,9 @@ void shiftROI(int ddx, int ddy) {
 //added by Matt Stanley & Bianca Messner 7/10/2015
 //compute and display visualization of confidence measure
 void computeConf(){
+
+	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
+	setMouseCallback(winConf, onMouse, (void*)winConf);
 	Mat im1Copy, im1LShift, im1RShift;
 	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrPreCMS, pyrPreCPS, pyrCMS, pyrCPS, pyrdS, pyrCM, pyrCP, pyrConf, pyrdcorr;
 	im1Copy = pyr1[0].clone();
@@ -803,8 +807,6 @@ int main(int argc, char ** argv)
 		//printf("%d levels, smallest size = %d x %d\n", pyrlevels, im.cols, im.rows);
 
 		namedWindow(win, CV_WINDOW_AUTOSIZE);
-		namedWindow(winConf, CV_WINDOW_AUTOSIZE);
-		setMouseCallback(winConf, onMouse, (void*)winConf);
 		setMouseCallback(win, onMouse, (void*)win);
 		selectedWin = win;
 		imdiff();

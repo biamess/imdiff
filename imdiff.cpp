@@ -28,6 +28,9 @@ int cygwinbug = 0;
 #include <stdio.h>
 #include "opencv2/opencv.hpp"
 #include "ImageIOpfm.h"
+#include <cmath>			// used for comparing with infinity
+
+#define UNK INFINITY
 
 #if defined(__linux__) || defined(__APPLE__)
 #define sprintf_s snprintf
@@ -384,7 +387,8 @@ void shiftROI(int ddx, int ddy) {
 
 //added by Matt Stanley & Bianca Messner 7/10/2015
 //compute and display visualization of confidence measure
-void computeConf(){
+void computeConf()
+{
 
 	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
 	setMouseCallback(winConf, onMouse, (void*)winConf);
@@ -555,7 +559,7 @@ void computeConf(){
 		//(where one matrix held a min value, the other will hold a zero since
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
-		pyrConf[i] = (minCM + minCP) * 3;
+		pyrConf[i] = (minCM + minCP) * 5;
 		//cout << format(minCM, "Python") << endl;
 		//cout << format(minCP, "Python") << endl;
 	}	
@@ -563,17 +567,98 @@ void computeConf(){
 	//display the confidence measure in a new window
 	dispPyr(winConf, pyrConf);
 
+	/*
 	Mat pyrConfIm = pyrImg(pyrConf);
 	imwrite("./confidence3.png", pyrConfIm);
+	*/
+	
 }
 
+// bilinear interpolation of ints in 0..255
+int linearInterpi(float fx, float fy, int v00, int v01, int v10, int v11)
+{
+	float w00 = (1-fx)*(1-fy);
+	float w01 = (1-fx)*fy;
+	float w10 = fx*(1-fy);
+	float w11 = fx*fy;
+
+	float v = w00 * v00 + w01 * v01 + w10 * v10 + w11 * v11;
+	int vr = round(v);
+	return max(0, min(255, vr));
+}
+
+
+// added by Matt Stanley & Bianca Messner 2015-07-15
+// warps an image by it's ground truth disparities
+void warpImageInv(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
+{
+	// get dimensions and type of src image
+	int width = src.size().width, height = src.size().height;
+	int type = src.type();	
+	int nB = src.channels();
+
+	// make sure src image is a color image									
+	if(nB != 3)
+	{
+		cout << "expected color image" << endl;
+		return;
+	}
+
+	// initialize the dst image to be bright pink
+	dst = Mat(height, width, type, Scalar(255, 128, 255));
+
+	
+	int n = 0;
+	// begin pixel loop
+	for (int y = 0; y < height; ++y)	// rows
+	{
+		for (int x = 0; x < width; ++x)	// cols
+		{
+			 float dx = scalex * dispx.at<float>(y, x); // index into dispx using (row, col)=(y, x)
+			 if(dx == UNK)
+			 	continue;
+			n++;
+
+			float xx = x + dx;
+			float yy = y;
+
+			int ixr = (int)round(xx);
+			int iyr = (int)round(yy);
+
+			if(ixr < 0 || ixr >= width || iyr < 0 || iyr >= height)
+				continue;
+
+			int ix0 = max(0, (int)floor(xx));
+			int iy0 = max(0, (int)floor(yy));
+			int ix1 = min(width-1, ix0+1);
+			int iy1 = min(height-1, iy0+1);
+
+			float fx = xx - ix0;
+			float fy = yy - iy0;
+
+			for(int b = 0; b < nB; ++b){
+				dst.at<Vec3b>(y,x)[b] = linearInterpi(	fx, fy,
+														src.at<Vec3b>(iy0, ix0)[b],
+														src.at<Vec3b>(iy1, ix0)[b],
+														src.at<Vec3b>(iy0, ix1)[b],
+														src.at<Vec3b>(iy1, ix1)[b]
+														);
+			}
+		}
+	}
+	// end pixel loop
+}
+
+
 //added by Matt Stanley & Bianca Messner 7/10/2015
-void warpByGT(){
+void warpByGT()
+{
 	if(gtd.empty()){
 		cout << "No Ground Truth image specified" << endl;
 		return;
 	}
 
+	/*
 	int w = oim1.size().width;
 	int h = oim1.size().height;
 	Mat map = Mat_<Point_<float> >(h, w);
@@ -597,32 +682,28 @@ void warpByGT(){
 
 	remap(oim1, warped, map, emptyMap, INTER_LINEAR);
 
-	//warped /= 255.0;
-
-	
-	imshow("gtd", gtd/255.0);
-	
-	/*
-	cout << "gtd w x h: " << gtd.size().width << " x " << gtd.size().height << endl;
-	cout << "oim1 w x h: " << oim1.size().width << " x " << oim1.size().height << endl;
+	imshow("warped", warped);
 	*/
 
-	im1 = warped(roi);
-	//imshow("warp", im1);
+	Mat warped;
+	warpImageInv(oim1, warped, gtd);
+	//imshow("warped", warped);
+	warped = warped(roi);
 
-	Pyr pyrim1, pyrdtest;
-	pyrdtest.resize(pyrlevels+1);
-	buildPyramid(im1, pyrim1, pyrlevels);
-	
-	for (int i = 0; i <= pyrlevels; i++) {
-		imdiff(pyr0[i], pyrim1[i], pyrdtest[i]);
+	Pyr pyrW, pyrWD;
+	pyrWD.resize(pyrlevels+1);
+	buildPyramid(warped, pyrW, pyrlevels);
+	for (int i = 0; i < pyrlevels; ++i)
+	{
+		imdiff(pyr0[i], pyrW[i], pyrWD[i]);
 	}
-	dispPyr(winConf, pyrdtest);
 
-	/*
-	map.at<Point>(2,1) = Point(1, 2);
-	cout << format(map,"python") << endl;
-	*/
+	//Mat pyrWIm = pyrImg(pyrWD);
+
+	imwrite("./gtWarped0.png", warped);
+
+
+
 
 }
 

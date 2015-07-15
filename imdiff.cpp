@@ -213,7 +213,7 @@ void imdiff(Mat im0, Mat im1, Mat &imd)
 {
 	if (mode == 0 || mode >= nmodes) { // difference of images
 		//addWeighted(im0, diffscale, im1, -diffscale, 128, imd);
-		imd = 128 + diffscale * (im0 - im1);
+		imd = 128 + diffscale * ((im0 - im1)/2);
 		return;
 	}
 	Mat im0g, im1g;
@@ -389,7 +389,7 @@ void computeConf(){
 	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
 	setMouseCallback(winConf, onMouse, (void*)winConf);
 
-	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS, imAbsDCMS, imAbsDCPS;
+	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS, imRS, imLS;
 	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrCM, pyrCP, pyrConf;
 	im1Copy = pyr1[0].clone();
 
@@ -413,56 +413,92 @@ void computeConf(){
 	buildPyramid(im1LShift, pyrL, pyrlevels);
 	buildPyramid(im1RShift, pyrR, pyrlevels);
 
-	//compute the matching costs between the images in the shifted pyramids
-	//and the bottom image
 	for (int i = 0; i <= pyrlevels; i++) {
+
+		//compute the matching costs between the images in the shifted pyramids
+	    //and the bottom image
 		imdiff(pyr0[i], pyrL[i], pyrLDiff[i]);
 		imdiff(pyr0[i], pyrR[i], pyrRDiff[i]);
 
+		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
+		Mat corrDC3 = abs(pyrd[i] - 128);
+		Mat corrLDiffC3 = abs(pyrLDiff[i] - 128);
+		Mat corrRDiffC3 = abs(pyrRDiff[i] - 128);
+
+		//compute absolute differences for 3 channel image
+		absdiff(corrDC3, corrLDiffC3, pyrCM[i]);
+		absdiff(corrDC3, corrRDiffC3, pyrCP[i]);
+
+
+		//START Creating 1-channel images
 		//copy values into mats to be used for single-channel matching cost
-		imCMS = pyrLDiff[i].clone();
-		imCPS = pyrRDiff[i].clone();
-		imdS = abs(pyrd[i] - 128); 		//corrected version of pyrd where 0 indicates perfect match
+		imCMS = pyrCM[i].clone();
+		imCPS = pyrCP[i].clone();
+
+		imdS = corrDC3.clone(); 
+		imLS = pyrLDiff[i].clone();
+		imRS = pyrRDiff[i].clone();
 
 		//init images to hold summed channels to be 
 		//correct width, height and type
 		Mat sumChannelsCMS = Mat::zeros(imCMS.size().height, imCMS.size().width, CV_32FC1);
 		Mat sumChannelsCPS = Mat::zeros(imCPS.size().height, imCPS.size().width, CV_32FC1);
+
 		Mat sumChannelsdS = Mat::zeros(imdS.size().height, imdS.size().width, CV_32FC1);
+		Mat sumChannelsLS = Mat::zeros(imLS.size().height, imdS.size().width, CV_32FC1);
+		Mat sumChannelsRS = Mat::zeros(imRS.size().height, imdS.size().width, CV_32FC1);
 
 		//init arrays to hold the 3 images corresponding to each channel
 		//of the original
 		Mat CMSSplit[3];
 		Mat CPSSplit[3];
+
 		Mat dSSplit[3];
+		Mat LSSplit[3];
+		Mat RSSplit[3];
 
 		//split the images into 3 1 channel images
 		split(imCMS, CMSSplit);
 		split(imCPS, CPSSplit);
+
 		split(imdS, dSSplit);
+		split(imLS, LSSplit);
+		split(imRS, RSSplit);
+
 
 		//sum the individual channels up
 		for(int i=0; i < 3; ++i){
 			Mat CMSF;
 			Mat CPSF;
+
 			Mat dSF;
+			Mat LSF;
+			Mat RSF;
 
 			//convert CV_8U to CV_32F to avoid overflow
 			CMSSplit[i].convertTo(CMSF, CV_32FC1);
 			CPSSplit[i].convertTo(CPSF, CV_32FC1);
+
 			dSSplit[i].convertTo(dSF, CV_32FC1);
+			LSSplit[i].convertTo(LSF, CV_32FC1);
+			RSSplit[i].convertTo(RSF, CV_32FC1);
 
 			sumChannelsCMS += CMSF;
 			sumChannelsCPS += CPSF;
+
 			sumChannelsdS += dSF;
+			sumChannelsLS += LSF;
+			sumChannelsRS += RSF;
 		}
+		//END creating single-channel images
+
 
 		//identify the pixels for which the current disparity yields a local minimum in matching costs
 		//create masks for the left and right images so that we can have 0 confidence
 		//at the pixels for which the current disparity is not a local minimum
-		Mat LMask = (sumChannelsdS < sumChannelsCMS); 	//mask for the L image - 255's where the d image holds the min,
+		Mat LMask = (sumChannelsdS < sumChannelsLS); 	//mask for the L image - 255's where the d image holds the min,
 									  	  				//zeros elsewhere
-		Mat RMask = (sumChannelsdS < sumChannelsCPS); 	//mask for the R image - 255's where the d image holds the min,
+		Mat RMask = (sumChannelsdS < sumChannelsRS); 	//mask for the R image - 255's where the d image holds the min,
 									      				//zeros elsewhere
 
 		//scale the values in the masks so that the 255's become 1's
@@ -478,29 +514,23 @@ void computeConf(){
 		/*	in the shifted pyramids and the matching cost of the pyramid at the current */
 		/*	disparity 																	*/
 
-		//compute absolute differences for 3 channel image
-		absdiff(pyrd[i], pyrLDiff[i], pyrCM[i]);
-		absdiff(pyrd[i], pyrRDiff[i], pyrCP[i]);
-
-
-		//compute absolute differences for single channel image
-		absdiff(sumChannelsdS, sumChannelsCMS, imAbsDCMS);
-		absdiff(sumChannelsdS, sumChannelsCPS, imAbsDCPS);
-
 		//mask out the values where the current disparity was not the minimum
 		//these will now hold zeroes, which will always be the minimum since the 
 		//absdiff is always positive
-		imAbsDCMS = LMask.mul(imAbsDCMS); 
-		imAbsDCPS = RMask.mul(imAbsDCPS);
+		sumChannelsCMS = LMask.mul(sumChannelsCMS); 
+		sumChannelsCPS = RMask.mul(sumChannelsCPS);
 
- 
 		//identify the min of the absolute differences computed above and
 		//store that in a new confidence pyramid
-		
-		Mat CMMask = (imAbsDCMS < imAbsDCPS); //mask for the CM image - 255's where the CM image holds the min,
+		Mat CMMask = (sumChannelsCMS < sumChannelsCPS); //mask for the CM image - 255's where the CM (left) image holds the min,
 											//zeros elsewhere
-		Mat CPMask = (imAbsDCPS <= imAbsDCMS); //mask for the CP image - 255's where the CP image holds the min
+		Mat CPMask = (sumChannelsCPS <= sumChannelsCMS); //mask for the CP image - 255's where the CP (right) image holds the min
 		//scale the values in the masks so that the 255's become 1's
+
+
+		//cout << format(CMMask, "Python") << endl;
+		//cout << format(CPMask, "Python") << endl;
+
 		CMMask /= 255.0;
 		CPMask /= 255.0;
 
@@ -526,10 +556,15 @@ void computeConf(){
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
 		pyrConf[i] = (minCM + minCP) * 3;
+		//cout << format(minCM, "Python") << endl;
+		//cout << format(minCP, "Python") << endl;
 	}	
 
 	//display the confidence measure in a new window
 	dispPyr(winConf, pyrConf);
+
+	Mat pyrConfIm = pyrImg(pyrConf);
+	imwrite("./confidence3.png", pyrConfIm);
 }
 
 //added by Matt Stanley & Bianca Messner 7/10/2015

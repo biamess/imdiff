@@ -4,13 +4,18 @@ Release/
 *sdf
 *.suo
 *.o
+*.a
 
 # don't want linux executable:
 imdiff
 
+#get rid of pfm reader header file
+ImageIOpfm.h
+
 # no images
 *.png
 *.jpg
+*.pfm
 # except for these two sample images
 !booksL.jpg
 !booksR.jpg

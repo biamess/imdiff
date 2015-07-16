@@ -576,6 +576,7 @@ void computeConf()
 }
 
 // bilinear interpolation of ints in 0..255
+// taken from Daniel's warp.cpp
 int linearInterpi(float fx, float fy, int v00, int v01, int v10, int v11)
 {
 	float w00 = (1-fx)*(1-fy);
@@ -693,17 +694,29 @@ void warpImageRemap(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
 	remap(src, dst, map, emptyMap, INTER_LINEAR);
 }
 
+
+// added by Bianca Messner & Matt Stanley 2015-07-16
+// given an occlusion mask sets the corresponding pixels
+// in the src image to be the color (0, 255, 0)
 void maskOccluded(Mat src, Mat &dst, Mat occlusionmask) {
+	// get src image dimensions
 	int width = src.size().width, height = src.size().height;
 	int type = src.type();	
 
+	// create a mask for non-occluded areas and
+	// occluded areas (both half and full)
 	Mat nonOccMask = (occlusionmask == 255)/255;
 	Mat occAreaMask = (occlusionmask != 255)/255;
 
+	// cut out colored pieces in the occluded areas
 	Mat colorMat = Mat(height, width, type, Scalar(0, 255, 0));
 	Mat colorOccArea = occAreaMask.mul(colorMat);
 
+	// cut out the color values in the src image
+	// that are occluded
 	Mat srcNonOcc = src.mul(nonOccMask);
+
+	// fill in occluded areas with color
 	dst = srcNonOcc + colorOccArea;
 }
 

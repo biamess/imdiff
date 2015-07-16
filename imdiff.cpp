@@ -614,9 +614,10 @@ void warpImageInv(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
 	{
 		for (int x = 0; x < width; ++x)	// cols
 		{
-			 float dx = scalex * dispx.at<float>(y, x); // index into dispx using (row, col)=(y, x)
-			 if(dx == UNK)
-			 	continue;
+			float dx = scalex * dispx.at<float>(y, x); // index into dispx using (row, col)=(y, x)
+
+			if(dx == UNK)
+				continue;
 			n++;
 
 			float xx = x + dx;
@@ -650,6 +651,48 @@ void warpImageInv(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
 }
 
 
+// added by Matt Stanley & Bianca Messner 2015-07-15
+// warps an image by it's ground truth disparities
+// uses opencv's remap() function
+void warpImageRemap(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
+{
+	// get dimensions and type of src image
+	int width = src.size().width, height = src.size().height;
+	int type = src.type();	
+	int nB = src.channels();
+
+	// make sure src image is a color image									
+	if(nB != 3)
+	{
+		cout << "expected color image" << endl;
+		return;
+	}
+
+	Mat map = Mat_<Point_<float> >(height, width);
+	// initialize the dst image to be bright pink
+	dst = Mat(height, width, type, Scalar(255, 128, 255));
+	Mat emptyMap;
+
+	float gtValue;
+
+	// begin building map
+	for(int i=0; i<height; ++i)
+	{
+		for (int j=0; j < width; ++j)
+		{
+			gtValue = scalex * (dispx.at<float>(i, j));
+			if (!((j+gtValue) > width)){ // if not out of bounds...
+				map.at<Point_<float> >(i, j) = Point(j+gtValue, i); //store the coordinates of the point in the 
+														   			//source image that contains the pixel we want in
+														   			//the destination image
+			}
+		}
+	}
+	// end building map
+	remap(src, dst, map, emptyMap, INTER_LINEAR);
+}
+
+
 //added by Matt Stanley & Bianca Messner 7/10/2015
 void warpByGT()
 {
@@ -658,53 +701,34 @@ void warpByGT()
 		return;
 	}
 
+	Mat warped, warped1, warped2, diff;
+	warpImageInv(oim1, warped1, gtd, -1);
+	warpImageRemap(oim1, warped2, gtd, -1);
+
+	warped1 = warped1(roi);
+	warped2 = warped2(roi);
+
 	/*
-	int w = oim1.size().width;
-	int h = oim1.size().height;
-	Mat map = Mat_<Point_<float> >(h, w);
-	Mat warped, emptyMap;
-	float gtValue;
-
-
-	for(int i=0; i<h; ++i)
-	{
-		for (int j=0; j < w; ++j)
-		{
-			gtValue = (gtd.at<float>(i, j));
-			if (!((j+gtValue) > w)){ // if not out of bounds...
-				map.at<Point_<float> >(i, j+gtValue) = Point(j, i); //store the coordinates of the point in the 
-														   //source image that contains the pixel we want in
-														   //the destination image
-			}
-		}
-
-	}
-
-	remap(oim1, warped, map, emptyMap, INTER_LINEAR);
-
-	imshow("warped", warped);
+	imdiff(warped1, warped2, diff);
+	imshow("diff", diff);
+	imwrite("warpFunctionDiff.png", diff);
+	imwrite("warpRemap.png", warped2);
+	imwrite("warpOurs.png", warped1);
 	*/
 
-	Mat warped;
-	warpImageInv(oim1, warped, gtd);
-	//imshow("warped", warped);
-	warped = warped(roi);
+	im1 = warped1;
 
-	Pyr pyrW, pyrWD;
-	pyrWD.resize(pyrlevels+1);
-	buildPyramid(warped, pyrW, pyrlevels);
-	for (int i = 0; i < pyrlevels; ++i)
-	{
-		imdiff(pyr0[i], pyrW[i], pyrWD[i]);
+	
+	Pyr pyrW1;
+	pyrW1.resize(pyrlevels+1);
+	buildPyramid(warped1, pyrW1, pyrlevels);
+	for(int i=0; i<pyrlevels; ++i){
+		imdiff(pyr0[i], pyrW1[i], pyrd[i]);
 	}
+	dispPyr("warped", pyrd);
+	
 
-	//Mat pyrWIm = pyrImg(pyrWD);
-
-	imwrite("./gtWarped0.png", warped);
-
-
-
-
+	//computeConf();
 }
 
 

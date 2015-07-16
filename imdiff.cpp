@@ -510,8 +510,6 @@ void computeConf()
 		LMask /= 255.0;
 		RMask /= 255.0;
 
-		//cout << "LMask channels: " << LMask.channels() << endl;
-
 		LMask.convertTo(LMask, CV_32FC1);
 		RMask.convertTo(RMask, CV_32FC1);
 
@@ -532,37 +530,22 @@ void computeConf()
 		Mat CPMask = (sumChannelsCPS <= sumChannelsCMS); //mask for the CP image - 255's where the CP (right) image holds the min
 		//scale the values in the masks so that the 255's become 1's
 
-
-		//cout << format(CMMask, "Python") << endl;
-		//cout << format(CPMask, "Python") << endl;
-
 		CMMask /= 255.0;
 		CPMask /= 255.0;
 
-		//make the 1 channel masks into 3 channel images
-		//where the 2nd and 3rd channel is a copy of the 1st
-		//so we can apply the mask to 3 channel images
-		Mat CMMaskArr[] = {CMMask, CMMask, CMMask};
-		Mat CPMaskArr[] = {CPMask, CPMask, CPMask};
-		Mat CMMaskC3, CPMaskC3;
-		merge(CMMaskArr, 3, CMMaskC3);
-		merge(CPMaskArr, 3, CPMaskC3);
-		CMMaskC3.convertTo(CMMaskC3, pyrCM[i].type());
-		CPMaskC3.convertTo(CPMaskC3, pyrCP[i].type());
+		CMMask.convertTo(CMMask, sumChannelsCMS.type());
+		CPMask.convertTo(CPMask, sumChannelsCPS.type());
 
-		
 		//do element-wise multiplication between the masks and the absdiff matrices
 		//to produce matrices that hold the minimum value where the mask had a 1 and zeroes elsewhere
-		Mat minCM = CMMaskC3.mul(pyrCM[i]); 
-		Mat minCP = CPMaskC3.mul(pyrCP[i]);
+		Mat minCM = CMMask.mul(sumChannelsCMS); 
+		Mat minCP = CPMask.mul(sumChannelsCPS);
 
 		//add the matrices computed above so that we have the min values at each cell
 		//(where one matrix held a min value, the other will hold a zero since
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
-		pyrConf[i] = (minCM + minCP) * 5;
-		//cout << format(minCM, "Python") << endl;
-		//cout << format(minCP, "Python") << endl;
+		pyrConf[i] = (minCM + minCP)/3;
 	}	
 
 	//display the confidence measure in a new window
@@ -757,7 +740,7 @@ void warpByGT()
 	dispPyr("warped", pyrd);
 	
 
-	//computeConf();
+	computeConf();
 }
 
 

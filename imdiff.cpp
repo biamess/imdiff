@@ -46,6 +46,7 @@ Mat oim0, oim1;       // original images
 Rect roi;             // cropping rectangle
 Mat im0, im1;         // cropped images
 Mat gtd;			  // ground truth disparity
+Mat occmask;		  // occlusion mask
 Pyr pyr0, pyr1, pyrd; // image pyramids of cropped regions
 
 int pyrlevels = 0;  // levels in pyramid (will be determined based on cropped image size)
@@ -692,6 +693,19 @@ void warpImageRemap(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
 	remap(src, dst, map, emptyMap, INTER_LINEAR);
 }
 
+void maskOccluded(Mat src, Mat &dst, Mat occlusionmask) {
+	int width = src.size().width, height = src.size().height;
+	int type = src.type();	
+
+	Mat nonOccMask = (occlusionmask == 255)/255;
+	Mat occAreaMask = (occlusionmask != 255)/255;
+
+	Mat colorMat = Mat(height, width, type, Scalar(0, 255, 0));
+	Mat colorOccArea = occAreaMask.mul(colorMat);
+
+	Mat srcNonOcc = src.mul(nonOccMask);
+	dst = srcNonOcc + colorOccArea;
+}
 
 //added by Matt Stanley & Bianca Messner 7/10/2015
 void warpByGT()
@@ -704,6 +718,7 @@ void warpByGT()
 	Mat warped, warped1, warped2, diff;
 	warpImageInv(oim1, warped1, gtd, -1);
 	warpImageRemap(oim1, warped2, gtd, -1);
+	maskOccluded(warped1, warped1, occmask);
 
 	warped1 = warped1(roi);
 	warped2 = warped2(roi);
@@ -715,6 +730,7 @@ void warpByGT()
 	imwrite("warpRemap.png", warped2);
 	imwrite("warpOurs.png", warped1);
 	*/
+
 
 	im1 = warped1;
 
@@ -735,6 +751,7 @@ void warpByGT()
 void mainLoop()
 {
 	Mat tmp;
+	Mat dst;
 
 	while (1) {
 		int c = waitKey(0);
@@ -849,7 +866,7 @@ int main(int argc, char ** argv)
 	setvbuf(stdout, (char*)NULL, _IONBF, 0); // fix to flush stdout when called from cygwin
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: %s im1 im2 [groundtruthim2 [decimationFact [offsx [offsy]]]\n", argv[0]);
+		fprintf(stderr, "usage: %s im1 im2 [groundtruthim2 [occlusionmask [decimationFact [offsx [offsy]]]]\n", argv[0]);
 		exit(1);
 	}
 	try {
@@ -863,11 +880,13 @@ int main(int argc, char ** argv)
 		if (argc > 3)
 			ReadFilePFM(gtd, argv[3]);
 		if (argc > 4)
-			downsample = atoi(argv[4]);
+			occmask = readIm(argv[4]);
 		if (argc > 5)
-			offsx = atoi(argv[5]);
+			downsample = atoi(argv[5]);
 		if (argc > 6)
-			offsy = atoi(argv[6]);
+			offsx = atoi(argv[6]);
+		if (argc > 7)
+			offsy = atoi(argv[7]);
 
 		// downsample images
 		if (downsample > 1) {

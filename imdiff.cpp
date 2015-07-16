@@ -71,6 +71,7 @@ float startx;
 float starty;
 float startdy;
 float diffscale = 1;
+float confScale = 1;
 float step = 1;    // arrow key step size
 int nccsize = 3;
 float ncceps = 1e-2f;
@@ -132,6 +133,7 @@ void info(Mat imd)
 	//Mat r = imd(Rect(0, imd.rows-18, imd.cols, 18));  // better: darken subregion!
 	//r *= 0.5;
 	char txt[100];
+	char txt3[100];
 	if (mode == 0) { // color diff
 		sprintf_s(txt, 100, "1-diff * %.1f  dx=%4.1f dy=%4.1f step=%3.1f", 
 			diffscale, dx, dy, step);
@@ -142,9 +144,11 @@ void info(Mat imd)
 		sprintf_s(txt, 100, "%d-%s dx=%4.1f dy=%4.1f step=%3.1f aggr %dx%d", 
 			mode+1, modestr[mode], dx, dy, step, aggrsize, aggrsize);
 	}
+	sprintf_s(txt3, 100, "confScale=%.1f", confScale);
 	putText(imd, txt, Point(5, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 	const char *txt2 = "C/V:step  O/P:dgx  Z/X:contrast  N/M:nccsize  E/R:ncceps  F/G:aggr  ?:help  Q:quit";
-	putText(imd, txt2, Point(5, imd.rows-3), FONT_HERSHEY_PLAIN, 0.8, Scalar(120, 180, 180));
+	putText(imd, txt2, Point(5, imd.rows-2), FONT_HERSHEY_PLAIN, 0.8, Scalar(120, 180, 180));
+	putText(imd, txt3, Point(400, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 }
 
 void myImDiff2(Mat a, Mat b, Mat &d)
@@ -313,6 +317,11 @@ bool offsetRect(Rect &r, int ddx, int ddy, int w, int h)
 
 void imdiff()
 {
+	// added by Matt Stanley and Bianca Messner to reset im0 pyramid
+	// 2015-07-16
+	buildPyramid(im0, pyr0, pyrlevels);
+
+
 	// try to accommodate offset dx, dy by shifting roi in im1
 	Rect roi1 = roi;	
 	offsetRect(roi1, (int)floor(-dx), (int)floor(-dy), oim1.cols, oim1.rows);
@@ -545,7 +554,7 @@ void computeConf()
 		//(where one matrix held a min value, the other will hold a zero since
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
-		pyrConf[i] = (minCM + minCP)/3;
+		pyrConf[i] = ((minCM + minCP)/3) * confScale;
 	}	
 
 	//display the confidence measure in a new window
@@ -727,8 +736,10 @@ void warpByGT()
 	imwrite("warpOurs.png", warped1);
 	*/
 
-
-	im1 = warped1;
+	Mat im0MaskOcc;
+	maskOccluded(im0, im0MaskOcc, occmask(roi));
+	buildPyramid(warped1, pyr1, pyrlevels);
+	buildPyramid(im0MaskOcc, pyr0, pyrlevels);
 
 	
 	Pyr pyrW1;
@@ -737,6 +748,10 @@ void warpByGT()
 	for(int i=0; i<pyrlevels; ++i){
 		imdiff(pyr0[i], pyrW1[i], pyrd[i]);
 	}
+
+	//Mat maskedDiff;
+	//maskOccluded(pyrd[0], maskedDiff, occmask(roi));
+	//buildPyramid(maskedDiff, pyrd, pyrlevels);
 	dispPyr("warped", pyrd);
 	
 
@@ -793,6 +808,10 @@ void mainLoop()
 			computeConf(); break;
 		case 'w':
 			warpByGT(); break;
+		case 'y':
+			confScale += 0.10; imdiff(); break;
+		case 'u':
+			confScale = max(0.0, confScale-0.10); imdiff(); break;
 		case 'z': // decrease contrast
 			if (mode==0) {diffscale /= 1.5; imdiff();} break;
 		case 'x': // increase contrast

@@ -396,6 +396,39 @@ void shiftROI(int ddx, int ddy) {
 }
 
 
+//converts a 3-band image "src" into a single band image stored at "dst"
+//by summing up the values in the three channels
+void sumChannels (Mat src, Mat &dst){
+	//START Creating 1-channel images
+		
+	//init images to hold summed channels to be 
+	//correct width, height and type
+	int height = src.size().height;
+	int width = src.size().width;
+	int type = CV_32FC1;
+	dst = Mat::zeros(height, width, type);
+
+	//init arrays to hold the 3 images corresponding to each channel
+	//of the original
+	Mat srcSplit[3];
+		
+
+	//split the images into 3 1 channel images
+	split(src, srcSplit);
+
+
+	//sum the individual channels up
+	for(int i=0; i < 3; ++i){
+		Mat srcF;
+			
+		//convert CV_8U to CV_32F to avoid overflow
+		srcSplit[i].convertTo(srcF, type);
+
+		dst += srcF;
+	}
+}
+
+
 //added by Matt Stanley & Bianca Messner 7/10/2015
 //compute and display visualization of confidence measure
 void computeConf()
@@ -446,65 +479,19 @@ void computeConf()
 
 
 		//START Creating 1-channel images
-		//copy values into mats to be used for single-channel matching cost
-		imCMS = pyrCM[i].clone();
-		imCPS = pyrCP[i].clone();
+		//init images to hold summed channels
+		Mat sumChannelsCMS;
+		Mat sumChannelsCPS;
+		Mat sumChannelsdS;
+		Mat sumChannelsLS;
+		Mat sumChannelsRS;
 
-		imdS = corrDC3.clone(); 
-		imLS = pyrLDiff[i].clone();
-		imRS = pyrRDiff[i].clone();
+		sumChannels(pyrCM[i], sumChannelsCMS);
+		sumChannels(pyrCP[i], sumChannelsCPS);
+		sumChannels(corrDC3, sumChannelsdS);
+		sumChannels(pyrLDiff[i], sumChannelsLS);
+		sumChannels(pyrRDiff[i], sumChannelsRS);
 
-		//init images to hold summed channels to be 
-		//correct width, height and type
-		Mat sumChannelsCMS = Mat::zeros(imCMS.size().height, imCMS.size().width, CV_32FC1);
-		Mat sumChannelsCPS = Mat::zeros(imCPS.size().height, imCPS.size().width, CV_32FC1);
-
-		Mat sumChannelsdS = Mat::zeros(imdS.size().height, imdS.size().width, CV_32FC1);
-		Mat sumChannelsLS = Mat::zeros(imLS.size().height, imdS.size().width, CV_32FC1);
-		Mat sumChannelsRS = Mat::zeros(imRS.size().height, imdS.size().width, CV_32FC1);
-
-		//init arrays to hold the 3 images corresponding to each channel
-		//of the original
-		Mat CMSSplit[3];
-		Mat CPSSplit[3];
-
-		Mat dSSplit[3];
-		Mat LSSplit[3];
-		Mat RSSplit[3];
-
-		//split the images into 3 1 channel images
-		split(imCMS, CMSSplit);
-		split(imCPS, CPSSplit);
-
-		split(imdS, dSSplit);
-		split(imLS, LSSplit);
-		split(imRS, RSSplit);
-
-
-		//sum the individual channels up
-		for(int i=0; i < 3; ++i){
-			Mat CMSF;
-			Mat CPSF;
-
-			Mat dSF;
-			Mat LSF;
-			Mat RSF;
-
-			//convert CV_8U to CV_32F to avoid overflow
-			CMSSplit[i].convertTo(CMSF, CV_32FC1);
-			CPSSplit[i].convertTo(CPSF, CV_32FC1);
-
-			dSSplit[i].convertTo(dSF, CV_32FC1);
-			LSSplit[i].convertTo(LSF, CV_32FC1);
-			RSSplit[i].convertTo(RSF, CV_32FC1);
-
-			sumChannelsCMS += CMSF;
-			sumChannelsCPS += CPSF;
-
-			sumChannelsdS += dSF;
-			sumChannelsLS += LSF;
-			sumChannelsRS += RSF;
-		}
 		//END creating single-channel images
 
 

@@ -92,6 +92,7 @@ void printhelp()
 		"D     - show diff\n"
 		"W 	   - show GT warped image 2\n"
 		"+     - show confidence measure\n"
+		"Y, U  - confidence contrast\n"
 		"1-4 - change mode:\n"
 		"  1 - color diff\n"
 		"  2 - NCC\n"

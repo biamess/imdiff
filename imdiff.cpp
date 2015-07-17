@@ -54,9 +54,9 @@ int pyrlevels = 0;  // levels in pyramid (will be determined based on cropped im
 int mode = 0;
 const int nmodes = 4;
 const char *modestr[nmodes] = {
-	"diff  ",  // color diff 
-	"NCC   ",
-	"ICPR  ",  // ICPR 94 gradient diff
+	"diff",  // color diff 
+	"NCC",
+	"ICPR",  // ICPR 94 gradient diff
 	"Bleyer"}; // 0.1 * color diff + 0.9 * gradient diff
 
 const char *win = "imdiff";
@@ -447,20 +447,18 @@ void computeConf()
 
 	//initialize pyramids to correct size:
 	pyrConf.resize(pyrlevels+1);
+	pyrL.resize(pyrlevels+1);
+	pyrR.resize(pyrlevels+1);
 
 	//create matrices to shift the image by 1 pixshift to the right and left
 	Mat LShift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
 	Mat RShift = (Mat_<float>(2,3) << 1, 0, pixshift, 0, 1, 0);
 
-	//shift the image to the right and left
-	warpAffine(im1Copy, im1LShift, LShift, im1Copy.size());
-	warpAffine(im1Copy, im1RShift, RShift, im1Copy.size());
-
-	//create image pyramids from the shifted images
-	buildPyramid(im1LShift, pyrL, pyrlevels);
-	buildPyramid(im1RShift, pyrR, pyrlevels);
-
 	for (int i = 0; i <= pyrlevels; i++) {
+
+		//shift the image to the right and left
+		warpAffine(pyr1[i], pyrL[i], LShift, pyr1[i].size());
+		warpAffine(pyr1[i], pyrR[i], RShift, pyr1[i].size());
 
 		//compute the matching costs between the images in the shifted pyramids
 	    //and the bottom image
@@ -563,6 +561,15 @@ void computeConf()
 		//not both)
 		pyrConf[i] = ((minCM + minCP)/3) * confScale;
 	}	
+
+	/*
+	Mat confIm = pyrImg(pyrConf);
+	confIm *= 255;
+	string modeS(modestr[mode]);
+	string ending("-confidence.png");
+	string filePath = modeS + ending;
+	imwrite(filePath, confIm);
+	*/
 
 	//display the confidence measure in a new window
 	dispPyr(winConf, pyrConf);
@@ -747,7 +754,7 @@ void warpByGT()
 	Pyr pyrW1;
 	pyrW1.resize(pyrlevels+1);
 	buildPyramid(warped1, pyrW1, pyrlevels);
-	for(int i=0; i<pyrlevels; ++i){
+	for(int i=0; i<=pyrlevels; ++i){
 		imdiff(pyr0[i], pyrW1[i], pyrd[i]);
 	}
 

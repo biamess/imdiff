@@ -61,6 +61,7 @@ const char *modestr[nmodes] = {
 
 const char *win = "imdiff";
 const char *winConf = "Confidence";
+const char *winWarp = "Warped";
 const char *selectedWin;	// currently selected window
 float dx = 0;  // offset between images
 float dy = 0;
@@ -149,7 +150,7 @@ void info(Mat imd)
 	putText(imd, txt, Point(5, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 	const char *txt2 = "C/V:step  O/P:dgx  Z/X:contrast  N/M:nccsize  E/R:ncceps  F/G:aggr  ?:help  Q:quit";
 	putText(imd, txt2, Point(5, imd.rows-2), FONT_HERSHEY_PLAIN, 0.8, Scalar(120, 180, 180));
-	putText(imd, txt3, Point(400, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
+	putText(imd, txt3, Point(600, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 }
 
 void myImDiff2(Mat a, Mat b, Mat &d)
@@ -360,6 +361,9 @@ static void onMouse( int event, int x, int y, int flags, void *param)
 	}else if(winID == winConf){
 		selectedWin = winConf;
 		return;
+	}else if(winID == winWarp){
+		selectedWin = winWarp;
+		return;
 	}
 
 	x = (short)x; // seem to be short values passed in, cast needed for negative values during dragging
@@ -463,10 +467,16 @@ void computeConf()
 		imdiff(pyr0[i], pyrL[i], LDiff);
 		imdiff(pyr0[i], pyrR[i], RDiff);
 
+		Mat corrDC3 = pyrd[i].clone();
+		Mat corrLDiffC3 = LDiff.clone();
+		Mat corrRDiffC3 = RDiff.clone();
+
 		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
-		Mat corrDC3 = abs(pyrd[i] - 128);
-		Mat corrLDiffC3 = abs(LDiff - 128);
-		Mat corrRDiffC3 = abs(RDiff - 128);
+		if(mode == 0){
+			corrDC3 = abs(corrDC3 - 128);
+			corrLDiffC3 = abs(corrLDiffC3 - 128);
+			corrRDiffC3 = abs(corrRDiffC3 - 128);
+		}
 
 		//compute absolute differences for 3 channel image
 		absdiff(corrDC3, corrLDiffC3, CMMat);
@@ -490,21 +500,31 @@ void computeConf()
 			sumChannels(RDiff, sumChannelsRS);
 		}
 		else{
-			sumChannelsCMS = CMMat;
-			sumChannelsCPS = CPMat;
-			sumChannelsdS = corrDC3;
-			sumChannelsLS = LDiff;
-			sumChannelsRS = RDiff;
+			CMMat.convertTo(sumChannelsCMS, CV_32FC1);
+			CPMat.convertTo(sumChannelsCPS, CV_32FC1);
+			corrDC3.convertTo(sumChannelsdS, CV_32FC1);
+			LDiff.convertTo(sumChannelsLS, CV_32FC1);
+			RDiff.convertTo(sumChannelsRS, CV_32FC1);
 		}
+
 
 
 		//identify the pixels for which the current disparity yields a local minimum in matching costs
 		//create masks for the left and right images so that we can have 0 confidence
 		//at the pixels for which the current disparity is not a local minimum
-		Mat LMask = (sumChannelsdS < sumChannelsLS); 	//mask for the L image - 255's where the d image holds the min,
-									  	  				//zeros elsewhere
-		Mat RMask = (sumChannelsdS < sumChannelsRS); 	//mask for the R image - 255's where the d image holds the min,
-									      				//zeros elsewhere
+		//mask for the L image - 255's where the d image holds the min, 
+		//zeros elsewhere
+		Mat LMask = (mode == 1 || mode == 2) ? 
+					(sumChannelsdS > sumChannelsLS):
+					(sumChannelsdS < sumChannelsLS);
+
+		//mask for the R image - 255's where the d image holds the min,
+		//zeros elsewhere 	
+		Mat RMask = (mode == 1 || mode == 2) ? 
+					(sumChannelsdS > sumChannelsRS):
+					(sumChannelsdS < sumChannelsRS);	
+
+
 
 		//scale the values in the masks so that the 255's become 1's
 		LMask /= 255.0;
@@ -734,7 +754,9 @@ void warpByGT()
 	//Mat maskedDiff;
 	//maskOccluded(pyrd[0], maskedDiff, occmask(roi));
 	//buildPyramid(maskedDiff, pyrd, pyrlevels);
-	dispPyr("warped", pyrd);
+	namedWindow(winWarp, CV_WINDOW_AUTOSIZE);
+	setMouseCallback(winWarp, onMouse, (void*)winWarp);
+	dispPyr(winWarp, pyrd);
 	
 
 	computeConf();

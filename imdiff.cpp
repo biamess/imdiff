@@ -437,17 +437,12 @@ void computeConf()
 	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
 	setMouseCallback(winConf, onMouse, (void*)winConf);
 
-	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS, imRS, imLS;
-	Pyr pyrR, pyrL, pyrRDiff, pyrLDiff, pyrCM, pyrCP, pyrConf;
+	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS, imRS, imLS, RDiff, LDiff, CMMat, CPMat;
+	Pyr pyrR, pyrL, pyrConf;
 	im1Copy = pyr1[0].clone();
 
 	//initialize pyramids to correct size:
-	pyrRDiff.resize(pyrlevels+1);
-	pyrLDiff.resize(pyrlevels+1);
-	pyrCM.resize(pyrlevels+1);
-	pyrCP.resize(pyrlevels+1);
 	pyrConf.resize(pyrlevels+1);
-
 
 	//create matrices to shift the image by 1 pixshift to the right and left
 	Mat LShift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
@@ -465,17 +460,17 @@ void computeConf()
 
 		//compute the matching costs between the images in the shifted pyramids
 	    //and the bottom image
-		imdiff(pyr0[i], pyrL[i], pyrLDiff[i]);
-		imdiff(pyr0[i], pyrR[i], pyrRDiff[i]);
+		imdiff(pyr0[i], pyrL[i], LDiff);
+		imdiff(pyr0[i], pyrR[i], RDiff);
 
 		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
 		Mat corrDC3 = abs(pyrd[i] - 128);
-		Mat corrLDiffC3 = abs(pyrLDiff[i] - 128);
-		Mat corrRDiffC3 = abs(pyrRDiff[i] - 128);
+		Mat corrLDiffC3 = abs(LDiff - 128);
+		Mat corrRDiffC3 = abs(RDiff - 128);
 
 		//compute absolute differences for 3 channel image
-		absdiff(corrDC3, corrLDiffC3, pyrCM[i]);
-		absdiff(corrDC3, corrRDiffC3, pyrCP[i]);
+		absdiff(corrDC3, corrLDiffC3, CMMat);
+		absdiff(corrDC3, corrRDiffC3, CPMat);
 
 
 		//START Creating 1-channel images
@@ -486,11 +481,11 @@ void computeConf()
 		Mat sumChannelsLS;
 		Mat sumChannelsRS;
 
-		sumChannels(pyrCM[i], sumChannelsCMS);
-		sumChannels(pyrCP[i], sumChannelsCPS);
+		sumChannels(CMMat, sumChannelsCMS);
+		sumChannels(CPMat, sumChannelsCPS);
 		sumChannels(corrDC3, sumChannelsdS);
-		sumChannels(pyrLDiff[i], sumChannelsLS);
-		sumChannels(pyrRDiff[i], sumChannelsRS);
+		sumChannels(LDiff, sumChannelsLS);
+		sumChannels(RDiff, sumChannelsRS);
 
 		//END creating single-channel images
 
@@ -547,13 +542,8 @@ void computeConf()
 
 	//display the confidence measure in a new window
 	dispPyr(winConf, pyrConf);
-
-	/*
-	Mat pyrConfIm = pyrImg(pyrConf);
-	imwrite("./confidence3.png", pyrConfIm);
-	*/
-	
 }
+
 
 // bilinear interpolation of ints in 0..255
 // taken from Daniel's warp.cpp

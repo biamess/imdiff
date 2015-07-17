@@ -472,20 +472,30 @@ void computeConf()
 		absdiff(corrDC3, corrLDiffC3, CMMat);
 		absdiff(corrDC3, corrRDiffC3, CPMat);
 
-
-		//create 1-channel images:
-		//init images to hold summed channels
 		Mat sumChannelsCMS;
 		Mat sumChannelsCPS;
 		Mat sumChannelsdS;
-		Mat sumChannelsLS;
+		Mat sumChannelsLS;			
 		Mat sumChannelsRS;
 
-		sumChannels(CMMat, sumChannelsCMS);
-		sumChannels(CPMat, sumChannelsCPS);
-		sumChannels(corrDC3, sumChannelsdS);
-		sumChannels(LDiff, sumChannelsLS);
-		sumChannels(RDiff, sumChannelsRS);
+		if (corrDC3.channels() == 3){ //if working with 3 channel images,
+									  //convert to 1 channel images
+			//create 1-channel images:
+			//init images to hold summed channels
+
+			sumChannels(CMMat, sumChannelsCMS);
+			sumChannels(CPMat, sumChannelsCPS);
+			sumChannels(corrDC3, sumChannelsdS);
+			sumChannels(LDiff, sumChannelsLS);
+			sumChannels(RDiff, sumChannelsRS);
+		}
+		else{
+			sumChannelsCMS = CMMat;
+			sumChannelsCPS = CPMat;
+			sumChannelsdS = corrDC3;
+			sumChannelsLS = LDiff;
+			sumChannelsRS = RDiff;
+		}
 
 
 		//identify the pixels for which the current disparity yields a local minimum in matching costs

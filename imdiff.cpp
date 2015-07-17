@@ -437,7 +437,7 @@ void computeConf()
 	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
 	setMouseCallback(winConf, onMouse, (void*)winConf);
 
-	Mat im1Copy, im1LShift, im1RShift, imCMS, imCPS, imdS, imRS, imLS, RDiff, LDiff, CMMat, CPMat;
+	Mat im1Copy, im1LShift, im1RShift, RDiff, LDiff, CMMat, CPMat;
 	Pyr pyrR, pyrL, pyrConf;
 	im1Copy = pyr1[0].clone();
 
@@ -473,7 +473,7 @@ void computeConf()
 		absdiff(corrDC3, corrRDiffC3, CPMat);
 
 
-		//START Creating 1-channel images
+		//create 1-channel images:
 		//init images to hold summed channels
 		Mat sumChannelsCMS;
 		Mat sumChannelsCPS;
@@ -486,8 +486,6 @@ void computeConf()
 		sumChannels(corrDC3, sumChannelsdS);
 		sumChannels(LDiff, sumChannelsLS);
 		sumChannels(RDiff, sumChannelsRS);
-
-		//END creating single-channel images
 
 
 		//identify the pixels for which the current disparity yields a local minimum in matching costs
@@ -504,10 +502,6 @@ void computeConf()
 
 		LMask.convertTo(LMask, CV_32FC1);
 		RMask.convertTo(RMask, CV_32FC1);
-
-		/*	compute the absolute difference between the matching costs for the images	*/
-		/*	in the shifted pyramids and the matching cost of the pyramid at the current */
-		/*	disparity 																	*/
 
 		//mask out the values where the current disparity was not the minimum
 		//these will now hold zeroes, which will always be the minimum since the 

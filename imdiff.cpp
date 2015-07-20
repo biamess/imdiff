@@ -29,6 +29,9 @@ int cygwinbug = 0;
 #include "opencv2/opencv.hpp"
 #include "ImageIOpfm.h"
 #include <cmath>			// used for comparing with infinity
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 
 #define UNK INFINITY
 
@@ -38,6 +41,40 @@ int cygwinbug = 0;
 
 using namespace cv;
 using namespace std;
+
+struct Plane {
+	int id, xmin, xmax, ymin, ymax, npts;
+	float a, b, c;
+
+	// default constructor
+	Plane(){
+		id = 0;
+		xmin = 0;
+		xmax = 0;
+		ymin = 0;
+		ymax = 0;
+		npts = 0;
+		a = 0;
+		b = 0;
+		c = 0;
+	}
+
+	// constructor for plane
+	Plane(	int init_id, int init_xmin, int init_xmax, 
+			int init_ymin, int init_ymax, int init_npts, 
+			float init_a, float init_b, float init_c){
+
+		id = init_id;
+		xmin = init_xmin;
+		xmax = init_xmax;
+		ymin = init_ymin;
+		ymax = init_ymax;
+		npts = init_npts;
+		a = init_a;
+		b = init_b;
+		c = init_c;
+	} 
+};
 
 
 typedef vector<Mat> Pyr;
@@ -63,6 +100,7 @@ const char *win = "imdiff";
 const char *winConf = "Confidence";
 const char *winWarp = "Warped";
 const char *selectedWin;	// currently selected window
+vector<Plane> planes;
 float dx = 0;  // offset between images
 float dy = 0;
 float dgx = 0; // disparity gradient
@@ -108,6 +146,41 @@ void printhelp()
 		"H , ? - help\n"
 		"(-)   - close current window\n"
 		"Esc, Q - quit\n");
+}
+
+void readPlanesFromFile(string filePath){
+	// create fstream object to read in planeEqns file 
+    // open the file in binary
+    fstream file(filePath.c_str(), ios::in | ios::binary);
+
+    int id, xmin, xmax, ymin, ymax, npts;
+    float a, b, c;
+    string columnLabel;
+
+    cout << "Plane Descriptors: ";
+    for(int i =0; i < 9; ++i){
+    	file >> columnLabel;
+    	cout << columnLabel << " ";
+    }
+    cout << endl;
+
+    while(true){
+    	file >> id;
+    	file >> xmin;
+    	file >> xmax;
+    	file >> ymin;
+    	file >> ymax;
+    	file >> npts;
+    	file >> a;
+    	file >> b;
+    	file >> c;
+
+    	if( file.eof() ) break;
+
+    	Plane p(id, xmin, xmax, ymin, ymax, npts, a, b, c);
+    	planes.push_back(p);
+    }
+    cout << "Read in " << planes.size() << " planes from " << filePath << endl;
 }
 
 void computeGradientX(Mat img, Mat &gx)
@@ -801,6 +874,8 @@ void mainLoop()
 			printhelp(); break;
 		case 45:
 			destroyWindow(selectedWin); break;
+		case '=':
+			readPlanesFromFile("im0_planeEqns.txt"); break;
 		case 2424832: case 65361: // left arrow
 			dx -= step; imdiff(); break;
 		case 2555904: case 65363: // right arrow

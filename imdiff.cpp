@@ -842,6 +842,23 @@ void planeWarp (Mat src, Mat &dst){
 	warpAffine(src, dst, PW, src.size());
 }
 
+void reset(){
+	dx = 0;  // offset between images
+	dy = 0;
+	dgx = 0; // disparity gradient
+	ds = 1; 
+	diffscale = 1;
+	confScale = 1;
+	step = 1;    // arrow key step size
+	nccsize = 3;
+	ncceps = 1e-2f;
+	aggrsize = 1;
+	diffmin = 0; // 0 or 128 to clip negative response
+	pixshift = 1; // amount (in pixels) to shift the image by 
+	wim1 = oim1.clone();
+
+}
+
 void mainLoop()
 {
 	Mat tmp;
@@ -863,6 +880,8 @@ void mainLoop()
 			printhelp(); break;
 		case 45:
 			destroyWindow(selectedWin); break;
+		case '0':
+			reset(); imdiff(); break;
 		case '=':
 			readPlanesFromFile("im0_planeEqns.txt"); break;
 		case 2424832: case 65361: // left arrow

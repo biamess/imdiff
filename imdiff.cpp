@@ -81,6 +81,7 @@ typedef vector<Mat> Pyr;
 
 Mat oim0, oim1;       // original images
 Rect roi;             // cropping rectangle
+Mat wim0, wim1;		  // warped images at original resolution
 Mat im0, im1;         // cropped images
 Mat gtd;			  // ground truth disparity
 Mat occmask;		  // occlusion mask
@@ -329,10 +330,11 @@ void imdiff(Mat im0, Mat im1, Mat &imd)
 		Mat cdiff, gx0, gx1, gdiff;
 		absdiff(im0, im1, cdiff);
 		cvtColor(cdiff, cdiff, CV_BGR2GRAY);
-		computeGradientX(im0g, gx0);
-		computeGradientX(im1g, gx1);
-		absdiff(gx0, gx1, gdiff);
-		gdiff.convertTo(imd, CV_8U, 1, 0); // only show x-grad diff right now
+		cdiff.convertTo(imd, CV_8U, 1, 0); // abs color diff for now
+		//computeGradientX(im0g, gx0);
+		//computeGradientX(im1g, gx1);
+		//absdiff(gx0, gx1, gdiff);
+		//gdiff.convertTo(imd, CV_8U, 1, 0); // only show x-grad diff right now
 		//float sc = diffscale;
 		//addWeighted(cdiff, 0.1*sc, gdiff, 0.9*sc, 0, imd, CV_8U);
 		//imd = 255 - imd;
@@ -403,7 +405,7 @@ void imdiff()
 	// 2015-07-16
 	buildPyramid(im0, pyr0, pyrlevels);
 
-	
+	/*
 	// try to accommodate offset dx, dy by shifting roi in im1
 	Rect roi1 = roi;	
 	offsetRect(roi1, (int)floor(-dx), (int)floor(-dy), oim1.cols, oim1.rows);
@@ -422,16 +424,19 @@ void imdiff()
 	Mat im1t;
 	warpAffine(im1, im1t, T1, im1.size());
 	buildPyramid(im1t, pyr1, pyrlevels);
-	
-
-	/*
-	float s = 1;
-	Mat oim1T, im1T;
-	Mat transform = (Mat_<float>(2,3) << s, dgx, dx-dgx*im0.rows/2, 0, s, dy);
-	warpAffine(oim1, oim1T, transform, oim1.size());
-	im1T = oim1T(roi);
-	buildPyramid(im1T, pyr1, pyrlevels);
 	*/
+	
+	// perform tranformation on the entire image and then 
+	// crop the smaller window from the transformed image
+	// less efficient, but difference in performance isn't 
+	// very noticeable
+	float s = 1;
+	Mat wim1T, im1T;
+	Mat transform = (Mat_<float>(2,3) << s, dgx, dx-dgx*im0.rows/2, 0, s, dy);
+	warpAffine(wim1, wim1T, transform, oim1.size());
+	im1T = wim1T(roi);
+	buildPyramid(im1T, pyr1, pyrlevels);
+	
 
 	for (int i = 0; i <= pyrlevels; i++) {
 		imdiff(pyr0[i], pyr1[i], pyrd[i]);
@@ -798,7 +803,7 @@ void maskOccluded(Mat src, Mat &dst, Mat occlusionmask) {
 	Mat occAreaMask = (occlusionmask != 255)/255;
 
 	// cut out colored pieces in the occluded areas
-	Mat colorMat = Mat(height, width, type, Scalar(0, 255, 0));
+	Mat colorMat = Mat(height, width, type, Scalar(255, 255, 255));
 	Mat colorOccArea = occAreaMask.mul(colorMat);
 
 	// cut out the color values in the src image
@@ -817,44 +822,10 @@ void warpByGT()
 		return;
 	}
 
-	Mat warped, warped1, warped2, diff;
+	Mat warped, warped1, diff;
 	warpImageInv(oim1, warped1, gtd, -1);
-	warpImageRemap(oim1, warped2, gtd, -1);
 	maskOccluded(warped1, warped1, occmask);
-
-	warped1 = warped1(roi);
-	warped2 = warped2(roi);
-
-	/*
-	imdiff(warped1, warped2, diff);
-	imshow("diff", diff);
-	imwrite("warpFunctionDiff.png", diff);
-	imwrite("warpRemap.png", warped2);
-	imwrite("warpOurs.png", warped1);
-	*/
-
-	Mat im0MaskOcc;
-	maskOccluded(im0, im0MaskOcc, occmask(roi));
-	buildPyramid(warped1, pyr1, pyrlevels);
-	buildPyramid(im0MaskOcc, pyr0, pyrlevels);
-
-	
-	Pyr pyrW1;
-	pyrW1.resize(pyrlevels+1);
-	buildPyramid(warped1, pyrW1, pyrlevels);
-	for(int i=0; i<=pyrlevels; ++i){
-		imdiff(pyr0[i], pyrW1[i], pyrd[i]);
-	}
-
-	//Mat maskedDiff;
-	//maskOccluded(pyrd[0], maskedDiff, occmask(roi));
-	//buildPyramid(maskedDiff, pyrd, pyrlevels);
-	namedWindow(winWarp, CV_WINDOW_AUTOSIZE);
-	setMouseCallback(winWarp, onMouse, (void*)winWarp);
-	dispPyr(winWarp, pyrd);
-	
-
-	computeConf();
+	wim1 = warped1;	
 }
 
 // added by Bianca Messner & Matt Stanley 2015-07-20
@@ -918,7 +889,7 @@ void mainLoop()
 		case '+': // display confidence image
 			computeConf(); break;
 		case 'w':
-			warpByGT(); break;
+			warpByGT(); imdiff(); break;
 		case 'y':
 			confScale += 0.10; imdiff(); break;
 		case 'u':
@@ -1001,6 +972,7 @@ int main(int argc, char ** argv)
 		ensureSameSize(oim0, oim1);
 
 
+
 		int downsample = 1; // use 2 for half-size, etc.
 		int offsx = -1, offsy = -1;
 		if (argc > 3)
@@ -1034,6 +1006,8 @@ int main(int argc, char ** argv)
 		}
 		im0 = oim0(roi);
 		im1 = oim1(roi);
+		wim0 = oim0.clone();
+		wim1 = oim1.clone();
 
 		// determine number of levels in the pyramid
 		int smallestpyr = 20; // size of smallest pyramid image

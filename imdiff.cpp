@@ -426,10 +426,8 @@ void sumChannels (Mat src, Mat &dst){
 	//of the original
 	Mat srcSplit[3];
 		
-
 	//split the images into 3 1 channel images
 	split(src, srcSplit);
-
 
 	//sum the individual channels up
 	for(int i=0; i < 3; ++i){
@@ -779,6 +777,16 @@ void warpByGT()
 	computeConf();
 }
 
+// added by Bianca Messner & Matt Stanley 2015-07-20
+//warps an image by a plane
+void planeWarp (Mat src, Mat &dst){
+	float a;
+	float b;
+	float c;
+
+	Mat PW = (Mat_<float>(2,3) << a, b, c, 0.0, 1.0, 0.0);
+	warpAffine(src, dst, PW, src.size());
+}
 
 void mainLoop()
 {

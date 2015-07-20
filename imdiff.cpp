@@ -102,6 +102,7 @@ const char *winConf = "Confidence";
 const char *winWarp = "Warped";
 const char *selectedWin;	// currently selected window
 vector<Plane> planes;
+Plane selectPlane; //the plane the user selected for plane warping
 float dx = 0;  // offset between images
 float dy = 0;
 float dgx = 0; // disparity gradient
@@ -117,7 +118,7 @@ int nccsize = 3;
 float ncceps = 1e-2f;
 int aggrsize = 1;
 int diffmin = 0; // 0 or 128 to clip negative response
-int pixshift = 1; // amount (in pixels) to shift the image by
+int pixshift = 1; // amount (in pixels) to shift the image by 
 
 void printhelp()
 {
@@ -831,10 +832,12 @@ void warpByGT()
 // added by Bianca Messner & Matt Stanley 2015-07-20
 //warps an image by a plane
 void planeWarp (Mat src, Mat &dst){
-	float a;
-	float b;
-	float c;
+	//get plane parameters from global user-selected plane
+	float a = selectPlane.a;
+	float b = selectPlane.b;
+	float c = selectPlane.c;
 
+	//create matrix for warping the image & warp it!
 	Mat PW = (Mat_<float>(2,3) << a, b, c, 0.0, 1.0, 0.0);
 	warpAffine(src, dst, PW, src.size());
 }

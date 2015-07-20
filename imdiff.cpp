@@ -148,22 +148,28 @@ void printhelp()
 		"Esc, Q - quit\n");
 }
 
+//read in planes from text file of format produced by 
+//planefinder
 void readPlanesFromFile(string filePath){
 	// create fstream object to read in planeEqns file 
     // open the file in binary
     fstream file(filePath.c_str(), ios::in | ios::binary);
 
+    //variables to hold the plane info
     int id, xmin, xmax, ymin, ymax, npts;
     float a, b, c;
-    string columnLabel;
+    string columnLabel; //holds column headers
 
-    cout << "Plane Descriptors: ";
-    for(int i =0; i < 9; ++i){
+    cout << "Plane Descriptors: "; //print column headers
+    //read in & print column headers
+    for(int i = 0; i < 9; ++i){ 
     	file >> columnLabel;
     	cout << columnLabel << " ";
     }
     cout << endl;
 
+    //read in all plane information for all planes
+    //stop when end of file reached.
     while(true){
     	file >> id;
     	file >> xmin;
@@ -175,10 +181,11 @@ void readPlanesFromFile(string filePath){
     	file >> b;
     	file >> c;
 
-    	if( file.eof() ) break;
+    	if( file.eof() ) break; //stop at end of file
 
+    	//create a plane:
     	Plane p(id, xmin, xmax, ymin, ymax, npts, a, b, c);
-    	planes.push_back(p);
+    	planes.push_back(p); //store in the planes vector
     }
     cout << "Read in " << planes.size() << " planes from " << filePath << endl;
 }

@@ -5,6 +5,9 @@ Release/
 *.suo
 *.o
 *.a
+*.txt
+
+.DS_Store
 
 # don't want linux executable:
 imdiff

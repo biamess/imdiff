@@ -323,7 +323,7 @@ void imdiff()
 	// 2015-07-16
 	buildPyramid(im0, pyr0, pyrlevels);
 
-
+	
 	// try to accommodate offset dx, dy by shifting roi in im1
 	Rect roi1 = roi;	
 	offsetRect(roi1, (int)floor(-dx), (int)floor(-dy), oim1.cols, oim1.rows);
@@ -343,6 +343,16 @@ void imdiff()
 	warpAffine(im1, im1t, T1, im1.size());
 	buildPyramid(im1t, pyr1, pyrlevels);
 	
+
+	/*
+	float s = 1;
+	Mat oim1T, im1T;
+	Mat transform = (Mat_<float>(2,3) << s, dgx, dx-dgx*im0.rows/2, 0, s, dy);
+	warpAffine(oim1, oim1T, transform, oim1.size());
+	im1T = oim1T(roi);
+	buildPyramid(im1T, pyr1, pyrlevels);
+	*/
+
 	for (int i = 0; i <= pyrlevels; i++) {
 		imdiff(pyr0[i], pyr1[i], pyrd[i]);
 	}
@@ -641,12 +651,12 @@ void warpImageInv(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
 			float fy = yy - iy0;
 
 			for(int b = 0; b < nB; ++b){
-				dst.at<Vec3b>(y,x)[b] = linearInterpi(	fx, fy,
-														src.at<Vec3b>(iy0, ix0)[b],
-														src.at<Vec3b>(iy1, ix0)[b],
-														src.at<Vec3b>(iy0, ix1)[b],
-														src.at<Vec3b>(iy1, ix1)[b]
-														);
+				dst.at<Vec3b>(y,x)[b] = linearInterpi(fx, fy,
+													src.at<Vec3b>(iy0, ix0)[b],
+													src.at<Vec3b>(iy1, ix0)[b],
+													src.at<Vec3b>(iy0, ix1)[b],
+													src.at<Vec3b>(iy1, ix1)[b]
+													);
 			}
 		}
 	}

@@ -112,7 +112,7 @@ float startx;
 float starty;
 float startdy;
 float diffscale = 1;
-float confScale = 1;
+float confScale = 255;
 float step = 1;    // arrow key step size
 int nccsize = 3;
 float ncceps = 1e-2f;
@@ -564,6 +564,7 @@ void computeConf()
 		Mat corrRDiffC3 = RDiff.clone();
 
 		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
+		
 		if(mode == 0){
 			corrDC3 = abs(corrDC3 - 128);
 			corrLDiffC3 = abs(corrLDiffC3 - 128);
@@ -584,19 +585,34 @@ void computeConf()
 									  //convert to 1 channel images
 			//create 1-channel images:
 			//init images to hold summed channels
-
+			/*
 			sumChannels(CMMat, sumChannelsCMS);
 			sumChannels(CPMat, sumChannelsCPS);
 			sumChannels(corrDC3, sumChannelsdS);
 			sumChannels(LDiff, sumChannelsLS);
 			sumChannels(RDiff, sumChannelsRS);
+			*/
+			cvtColor(CMMat, sumChannelsCMS, CV_BGR2GRAY);
+			cvtColor(CPMat, sumChannelsCPS, CV_BGR2GRAY);
+			cvtColor(corrDC3, sumChannelsdS, CV_BGR2GRAY);
+			cvtColor(LDiff, sumChannelsLS, CV_BGR2GRAY);
+			cvtColor(RDiff, sumChannelsRS, CV_BGR2GRAY);
+
 		}
 		else{
+			/*
 			CMMat.convertTo(sumChannelsCMS, CV_32FC1);
 			CPMat.convertTo(sumChannelsCPS, CV_32FC1);
 			corrDC3.convertTo(sumChannelsdS, CV_32FC1);
 			LDiff.convertTo(sumChannelsLS, CV_32FC1);
 			RDiff.convertTo(sumChannelsRS, CV_32FC1);
+			*/
+
+			sumChannelsCMS = CMMat.clone() ;
+			sumChannelsCPS = CPMat.clone();
+			sumChannelsdS = corrDC3.clone();
+			sumChannelsLS = LDiff.clone();
+			sumChannelsRS = RDiff.clone();
 		}
 
 
@@ -622,8 +638,8 @@ void computeConf()
 		LMask /= 255.0;
 		RMask /= 255.0;
 
-		LMask.convertTo(LMask, CV_32FC1);
-		RMask.convertTo(RMask, CV_32FC1);
+		//LMask.convertTo(LMask, CV_32FC1);
+		//RMask.convertTo(RMask, CV_32FC1);
 
 		//mask out the values where the current disparity was not the minimum
 		//these will now hold zeroes, which will always be the minimum since the 
@@ -653,7 +669,8 @@ void computeConf()
 		//(where one matrix held a min value, the other will hold a zero since
 		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
 		//not both)
-		pyrConf[i] = ((minCM + minCP)/3) * confScale;
+
+		pyrConf[i] = (minCM + minCP) * confScale;
 	}	
 
 	/*

@@ -228,7 +228,7 @@ void info(Mat imd)
 		sprintf_s(txt, 100, "%d-%s dx=%4.1f dy=%4.1f step=%3.1f aggr %dx%d", 
 			mode+1, modestr[mode], dx, dy, step, aggrsize, aggrsize);
 	}
-	sprintf_s(txt3, 100, "confScale=%.1f", confScale);
+	sprintf_s(txt3, 100, "confScale=%.1f (x10)", confScale);
 	putText(imd, txt, Point(5, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 	const char *txt2 = "C/V:step  O/P:dgx  Z/X:contrast  N/M:nccsize  E/R:ncceps  F/G:aggr  ?:help  Q:quit";
 	putText(imd, txt2, Point(5, imd.rows-2), FONT_HERSHEY_PLAIN, 0.8, Scalar(120, 180, 180));
@@ -347,23 +347,6 @@ void imdiff(Mat im0, Mat im1, Mat &imd)
 		boxFilter(imd, imd, aggrsize);
 }
 
-Mat pyrImg(Pyr pyr) 
-{
-	Mat im = pyr[0];
-	int w = im.cols, h = im.rows;
-	Mat pim(Size(3*w/2+4, h+30), im.type(), Scalar(30, 10, 10));
-	im.copyTo(pim(Rect(0, 0, w, h)));
-
-	int x = w+2;
-	int y = 0;
-	for (int i = 1; i < (int)pyr.size(); i++) {
-		int w1 = pyr[i].cols, h1 = pyr[i].rows;
-		pyr[i].copyTo(pim(Rect(x, y, w1, h1)));
-		y += h1 + 2;
-	}
-	return pim;
-}
-
 // print information about image
 void printinfo(Mat img)
 {
@@ -379,7 +362,29 @@ void printinfo(Mat img)
 	case CV_64F: printf("CV_64F - 64-bit double\n"); break;
 	default:     printf("unknown\n");
 	}
+
 }
+
+Mat pyrImg(Pyr pyr) 
+{
+	Mat im = pyr[0];
+	printf("calling pyImg\n");
+	printinfo(im);
+	int w = im.cols, h = im.rows;
+	Mat pim(Size(3*w/2+4, h+30), im.type(), Scalar(30, 10, 10));
+	im.copyTo(pim(Rect(0, 0, w, h)));
+
+	int x = w+2;
+	int y = 0;
+	for (int i = 1; i < (int)pyr.size(); i++) {
+		int w1 = pyr[i].cols, h1 = pyr[i].rows;
+		pyr[i].copyTo(pim(Rect(x, y, w1, h1)));
+		y += h1 + 2;
+	}
+	return pim;
+}
+
+
 
 void dispPyr(const char *window, Pyr pim)
 {
@@ -519,9 +524,7 @@ void sumChannels (Mat src, Mat &dst){
 	for(int i=0; i < 3; ++i){
 		Mat srcF;
 			
-		//convert CV_8U to CV_32F to avoid overflow
-		srcSplit[i].convertTo(srcF, type);
-
+		srcF = srcSplit[i];
 		dst += srcF;
 	}
 }
@@ -535,9 +538,8 @@ void computeConf()
 	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
 	setMouseCallback(winConf, onMouse, (void*)winConf);
 
-	Mat im1Copy, im1LShift, im1RShift, RDiff, LDiff, CMMat, CPMat;
+	Mat cp_image, cm_image, cm_diff, cp_diff;
 	Pyr pyrR, pyrL, pyrConf;
-	im1Copy = pyr1[0].clone();
 
 	//initialize pyramids to correct size:
 	pyrConf.resize(pyrlevels+1);
@@ -545,74 +547,63 @@ void computeConf()
 	pyrR.resize(pyrlevels+1);
 
 	//create matrices to shift the image by 1 pixshift to the right and left
-	Mat LShift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
-	Mat RShift = (Mat_<float>(2,3) << 1, 0, pixshift, 0, 1, 0);
+	Mat l_shift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
+	Mat r_shift = (Mat_<float>(2,3) << 1, 0, pixshift, 0, 1, 0);
 
 	for (int i = 0; i <= pyrlevels; i++) {
 
 		//shift the image to the right and left
-		warpAffine(pyr1[i], pyrL[i], LShift, pyr1[i].size());
-		warpAffine(pyr1[i], pyrR[i], RShift, pyr1[i].size());
+		warpAffine(pyr1[i], pyrL[i], l_shift, pyr1[i].size());
+		warpAffine(pyr1[i], pyrR[i], r_shift, pyr1[i].size());
 
 		//compute the matching costs between the images in the shifted pyramids
 	    //and the bottom image
-		imdiff(pyr0[i], pyrL[i], LDiff);
-		imdiff(pyr0[i], pyrR[i], RDiff);
+		imdiff(pyr0[i], pyrL[i], cm_image);
+		imdiff(pyr0[i], pyrR[i], cp_image);
 
-		Mat corrDC3 = pyrd[i].clone();
-		Mat corrLDiffC3 = LDiff.clone();
-		Mat corrRDiffC3 = RDiff.clone();
+		Mat corr_c_image, corr_cm_image, corr_cp_image;
+
+		pyrd[i].convertTo(corr_c_image, CV_32F, 1.0/255);
+		cm_image.convertTo(corr_cm_image, CV_32F, 1.0/255);
+		cp_image.convertTo(corr_cp_image, CV_32F, 1.0/255);
 
 		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
 		
 		if(mode == 0){
-			corrDC3 = abs(corrDC3 - Scalar(128.0,128.0,128.0));
-			corrLDiffC3 = abs(corrLDiffC3 - Scalar(128.0,128.0,128.0));
-			corrRDiffC3 = abs(corrRDiffC3 - Scalar(128.0,128.0,128.0));
+			corr_c_image = abs(corr_c_image - Scalar(0.5,0.5,0.5));
+			corr_cm_image = abs(corr_cm_image - Scalar(0.5,0.5,0.5));
+			corr_cp_image = abs(corr_cp_image - Scalar(0.5,0.5,0.5));
 		}
 
 		//compute absolute differences for 3 channel image
-		absdiff(corrDC3, corrLDiffC3, CMMat);
-		absdiff(corrDC3, corrRDiffC3, CPMat);
+		absdiff(corr_c_image, corr_cm_image, cm_diff);
+		absdiff(corr_c_image, corr_cp_image, cp_diff);
 
-		Mat sumChannelsCMS;
-		Mat sumChannelsCPS;
-		Mat sumChannelsdS;
-		Mat sumChannelsLS;			
-		Mat sumChannelsRS;
+		Mat cm_diff_C1, cp_diff_C1, corr_c_image_C1, 
+			corr_cm_image_C1, corr_cp_image_C1;
 
-		if (corrDC3.channels() == 3){ //if working with 3 channel images,
+		if (corr_c_image.channels() == 3){ //if working with 3 channel images,
 									  //convert to 1 channel images
 			//create 1-channel images:
 			//init images to hold summed channels
-			/*
-			sumChannels(CMMat, sumChannelsCMS);
-			sumChannels(CPMat, sumChannelsCPS);
-			sumChannels(corrDC3, sumChannelsdS);
-			sumChannels(LDiff, sumChannelsLS);
-			sumChannels(RDiff, sumChannelsRS);
-			*/
-			cvtColor(CMMat, sumChannelsCMS, CV_BGR2GRAY);
-			cvtColor(CPMat, sumChannelsCPS, CV_BGR2GRAY);
-			cvtColor(corrDC3, sumChannelsdS, CV_BGR2GRAY);
-			cvtColor(LDiff, sumChannelsLS, CV_BGR2GRAY);
-			cvtColor(RDiff, sumChannelsRS, CV_BGR2GRAY);
+			sumChannels(cm_diff, cm_diff_C1);
+			sumChannels(cp_diff, cp_diff_C1);
+			sumChannels(corr_c_image, corr_c_image_C1);
+			sumChannels(corr_cm_image, corr_cm_image_C1);
+			sumChannels(corr_cp_image, corr_cp_image_C1);
 
+			cm_diff_C1 /= 3.0;
+			cp_diff_C1 /= 3.0;
+			corr_c_image_C1 /= 3.0;
+			corr_cm_image_C1 /= 3.0;
+			corr_cp_image_C1 /= 3.0;
 		}
 		else{
-			/*
-			CMMat.convertTo(sumChannelsCMS, CV_32FC1);
-			CPMat.convertTo(sumChannelsCPS, CV_32FC1);
-			corrDC3.convertTo(sumChannelsdS, CV_32FC1);
-			LDiff.convertTo(sumChannelsLS, CV_32FC1);
-			RDiff.convertTo(sumChannelsRS, CV_32FC1);
-			*/
-
-			sumChannelsCMS = CMMat.clone() ;
-			sumChannelsCPS = CPMat.clone();
-			sumChannelsdS = corrDC3.clone();
-			sumChannelsLS = LDiff.clone();
-			sumChannelsRS = RDiff.clone();
+			cm_diff_C1 = cm_diff.clone();
+			cp_diff_C1 = cp_diff.clone();
+			corr_c_image_C1 = corr_c_image.clone();
+			corr_cm_image_C1 = corr_cm_image.clone();
+			corr_cp_image_C1 = corr_cp_image.clone();
 		}
 
 
@@ -623,67 +614,33 @@ void computeConf()
 		//mask for the L image - 255's where the d image holds the min, 
 		//zeros elsewhere
 		Mat LMask = (mode == 1 || mode == 2) ? 
-					(sumChannelsdS > sumChannelsLS):
-					(sumChannelsdS < sumChannelsLS);
+					(corr_c_image_C1 > corr_cm_image_C1):
+					(corr_c_image_C1 < corr_cm_image_C1);
 
 		//mask for the R image - 255's where the d image holds the min,
 		//zeros elsewhere 	
 		Mat RMask = (mode == 1 || mode == 2) ? 
-					(sumChannelsdS > sumChannelsRS):
-					(sumChannelsdS < sumChannelsRS);	
-
-
+					(corr_c_image_C1 > corr_cp_image_C1):
+					(corr_c_image_C1 < corr_cp_image_C1);	
 
 		//scale the values in the masks so that the 255's become 1's
 		LMask /= 255.0;
 		RMask /= 255.0;
 
-		//LMask.convertTo(LMask, CV_32FC1);
-		//RMask.convertTo(RMask, CV_32FC1);
+		LMask.convertTo(LMask, CV_32F);
+		RMask.convertTo(RMask, CV_32F);
 
 		//mask out the values where the current disparity was not the minimum
-		//these will now hold zeroes, which will always be the minimum since the 
-		//absdiff is always positive
-		sumChannelsCMS = LMask.mul(sumChannelsCMS); 
-		sumChannelsCPS = RMask.mul(sumChannelsCPS);
+		//these will now hold zeroes, which will always be the minimum since 
+		//the absdiff is always positive
+		cm_diff_C1 = LMask.mul(cm_diff_C1); 
+		cp_diff_C1 = RMask.mul(cp_diff_C1);
 
-		//identify the min of the absolute differences computed above and
-		//store that in a new confidence pyramid
-		Mat CMMask = (sumChannelsCMS < sumChannelsCPS); //mask for the CM image - 255's where the CM (left) image holds the min,
-											//zeros elsewhere
-		Mat CPMask = (sumChannelsCPS <= sumChannelsCMS); //mask for the CP image - 255's where the CP (right) image holds the min
-		//scale the values in the masks so that the 255's become 1's
-
-		CMMask /= 255.0;
-		CPMask /= 255.0;
-
-		CMMask.convertTo(CMMask, sumChannelsCMS.type());
-		CPMask.convertTo(CPMask, sumChannelsCPS.type());
-
-		//do element-wise multiplication between the masks and the absdiff matrices
-		//to produce matrices that hold the minimum value where the mask had a 1 and zeroes elsewhere
-		Mat minCM = CMMask.mul(sumChannelsCMS); 
-		Mat minCP = CPMask.mul(sumChannelsCPS);
-
-		//add the matrices computed above so that we have the min values at each cell
-		//(where one matrix held a min value, the other will hold a zero since
-		//when computing the masks, either pyrCM[i] < pyrCP[i] or pyrCP[i] < pyrCM[i],
-		//not both)
-
-		pyrConf[i] = (minCM + minCP) * confScale;
+		pyrConf[i] = min(cm_diff_C1, cp_diff_C1);
 	}	
-
-	/*
-	Mat confIm = pyrImg(pyrConf);
-	confIm *= 255;
-	string modeS(modestr[mode]);
-	string ending("-confidence.png");
-	string filePath = modeS + ending;
-	imwrite(filePath, confIm);
-	*/
-
 	//display the confidence measure in a new window
-	dispPyr(winConf, pyrConf);
+	Mat im = pyrImg(pyrConf);
+	imshow(winConf, im * confScale * 10);
 }
 
 
@@ -844,6 +801,7 @@ void warpByGT()
 	warpImageInv(oim1, warped1, gtd, -1);
 	maskOccluded(warped1, warped1, occmask);
 	wim1 = warped1;	
+
 }
 
 // added by Bianca Messner & Matt Stanley 2015-07-20

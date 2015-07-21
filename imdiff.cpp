@@ -112,7 +112,7 @@ float startx;
 float starty;
 float startdy;
 float diffscale = 1;
-float confScale = 255;
+float confScale = 1;
 float step = 1;    // arrow key step size
 int nccsize = 3;
 float ncceps = 1e-2f;
@@ -566,9 +566,9 @@ void computeConf()
 		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
 		
 		if(mode == 0){
-			corrDC3 = abs(corrDC3 - 128);
-			corrLDiffC3 = abs(corrLDiffC3 - 128);
-			corrRDiffC3 = abs(corrRDiffC3 - 128);
+			corrDC3 = abs(corrDC3 - Scalar(128.0,128.0,128.0));
+			corrLDiffC3 = abs(corrLDiffC3 - Scalar(128.0,128.0,128.0));
+			corrRDiffC3 = abs(corrRDiffC3 - Scalar(128.0,128.0,128.0));
 		}
 
 		//compute absolute differences for 3 channel image

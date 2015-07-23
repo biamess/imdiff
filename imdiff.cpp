@@ -436,6 +436,8 @@ void imdiff()
 	// crop the smaller window from the transformed image
 	// less efficient, but difference in performance isn't 
 	// very noticeable
+
+
 	float s = 1;
 	Mat wim1T, im1T;
 	Mat transform = (Mat_<float>(2,3) << s, dgx, dx-dgx*im0.rows/2, 0, s, dy);
@@ -568,13 +570,11 @@ void computeConf()
 		cp_image.convertTo(corr_cp_image, CV_32F, 1.0/255);
 
 		//corrected version of matching cost images where 0 indicates perfect match (rather than 128)
-		
 		if(mode == 0){
 			corr_c_image = abs(corr_c_image - Scalar(0.5,0.5,0.5));
 			corr_cm_image = abs(corr_cm_image - Scalar(0.5,0.5,0.5));
 			corr_cp_image = abs(corr_cp_image - Scalar(0.5,0.5,0.5));
 		}
-
 		//compute absolute differences for 3 channel image
 		absdiff(corr_c_image, corr_cm_image, cm_diff);
 		absdiff(corr_c_image, corr_cp_image, cp_diff);
@@ -607,7 +607,6 @@ void computeConf()
 		}
 
 
-
 		//identify the pixels for which the current disparity yields a local minimum in matching costs
 		//create masks for the left and right images so that we can have 0 confidence
 		//at the pixels for which the current disparity is not a local minimum
@@ -616,7 +615,6 @@ void computeConf()
 		Mat LMask = (mode == 1 || mode == 2) ? 
 					(corr_c_image_C1 > corr_cm_image_C1):
 					(corr_c_image_C1 < corr_cm_image_C1);
-
 		//mask for the R image - 255's where the d image holds the min,
 		//zeros elsewhere 	
 		Mat RMask = (mode == 1 || mode == 2) ? 
@@ -635,11 +633,109 @@ void computeConf()
 		//the absdiff is always positive
 		cm_diff_C1 = LMask.mul(cm_diff_C1); 
 		cp_diff_C1 = RMask.mul(cp_diff_C1);
-
 		pyrConf[i] = min(cm_diff_C1, cp_diff_C1);
 	}	
 	//display the confidence measure in a new window
 	Mat im = pyrImg(pyrConf);
+	imshow(winConf, im * confScale * 10);
+}
+
+//compute confidence using pixel loops rather than 
+//opencv built-in functions
+void computeConfLoop(){
+	Pyr pyr_c, pyr_cm, pyr_cp, pyr_conf;
+
+	//initializing pyramids 
+	pyr_c.resize(pyrlevels+1);
+	pyr_cm.resize(pyrlevels+1);
+	pyr_cp.resize(pyrlevels+1);
+	pyr_conf.resize(pyrlevels+1);
+
+
+	//create matrices to shift the image by 1 pixshift to the right and left
+	Mat l_shift = (Mat_<float>(2,3) << 1, 0, -pixshift, 0, 1, 0);
+	Mat r_shift = (Mat_<float>(2,3) << 1, 0, pixshift, 0, 1, 0);
+
+	//loop over each of the images in the pyramid
+	for(int i = 0; i <= pyrlevels; ++i){
+
+		//shift the image to the right and left
+		warpAffine(pyr1[i], pyr_cm[i], l_shift, pyr1[i].size());
+		warpAffine(pyr1[i], pyr_cp[i], r_shift, pyr1[i].size());
+		pyr_c[i] = pyr1[i].clone();
+
+		Mat c_image, cm_image, cp_image, conf_image;
+
+		//compute the matching costs between the images at the shifted 
+		//and current disparities and the bottom image
+		imdiff(pyr0[i], pyr_cm[i], cm_image);
+		imdiff(pyr0[i], pyr_cp[i], cp_image);
+		imdiff(pyr0[i], pyr_c[i], c_image);
+
+		//convert all images to be floats in the range 0..1
+		c_image.convertTo(c_image, CV_32FC1, 1/255.0); 
+		cm_image.convertTo(cm_image, CV_32FC1, 1/255.0);
+		cp_image.convertTo(cp_image, CV_32FC1, 1/255.0);
+
+		if(c_image.channels() == 3){
+			//correct values returned by imdiff so that 0 represents a match,
+			//rather than 128
+			c_image = abs(c_image - Scalar(0.5, 0.5, 0.5));
+			cm_image = abs(cm_image - Scalar(0.5, 0.5, 0.5));
+			cp_image = abs(cp_image - Scalar(0.5, 0.5, 0.5));
+			
+			//convert the 3-channel image to a single channel image 
+			//by taking the avg of the 3 color channels
+			sumChannels(c_image, c_image);
+			sumChannels(cm_image, cm_image);
+			sumChannels(cp_image, cp_image);
+
+			c_image /= 3;
+			cm_image /= 3;
+			cp_image /= 3;
+		}
+
+		// get the dimensions of the images
+		int width = c_image.size().width, height = c_image.size().height;
+		// initialize the output image with same dimensions and type
+		conf_image = Mat::zeros(height, width, CV_32FC1);
+
+		// begin pixel loop (using one-dimensional loop for speed)
+		for(int pix = 0; pix < (width*height); ++pix){
+			float cm_diff, cp_diff, cm_image_cost, cp_image_cost, c_image_cost;
+
+			// get the cost at this pixel for each diff image
+			c_image_cost = c_image.at<float>(pix);
+			cp_image_cost = cp_image.at<float>(pix);
+			cm_image_cost = cm_image.at<float>(pix);
+
+			// if we are using NCC or ICPR we want the middle
+			// cost to be a max, otherwise a min
+			int test;
+			test = (mode==1 || mode==2) ? 
+
+				((c_image_cost > cp_image_cost) && 
+				 (c_image_cost > cm_image_cost)) :
+
+				((c_image_cost < cp_image_cost) && 
+				 (c_image_cost < cm_image_cost));
+
+			if(test){	
+				// if the middle value is a max or min, calculate the 
+				// min abs diff between the two shifted costs and the 
+				// center
+				cm_diff = abs(cm_image_cost - c_image_cost);
+				cp_diff = abs(cp_image_cost - c_image_cost);
+				conf_image.at<float>(pix) = min(cm_diff, cp_diff);
+			}else{
+				// otherwise set the pix to be 0, meaning no confidence
+				conf_image.at<float>(pix) = 0.0;
+			}
+
+		}
+		pyr_conf[i] = conf_image;
+	}
+	Mat im = pyrImg(pyr_conf);
 	imshow(winConf, im * confScale * 10);
 }
 
@@ -858,7 +954,11 @@ void mainLoop()
 		case '0':
 			reset(); imdiff(); break;
 		case '=':
-			readPlanesFromFile("im0_planeEqns.txt"); break;
+			readPlanesFromFile("im0_planeEqns.txt"); 
+			selectPlane = planes[230]; 
+			planeWarp(wim1, wim1);
+			imdiff();
+			break;
 		case 2424832: case 65361: // left arrow
 			dx -= step; imdiff(); break;
 		case 2555904: case 65363: // right arrow
@@ -884,7 +984,7 @@ void mainLoop()
 		case 'd': // back to diff
 			imdiff(); break;
 		case '+': // display confidence image
-			computeConf(); break;
+			computeConfLoop(); /*computeConf();*/ break;
 		case 'w':
 			warpByGT(); imdiff(); break;
 		case 'y':

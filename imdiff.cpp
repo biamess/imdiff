@@ -102,7 +102,7 @@ const char *winConf = "Confidence";
 const char *winWarp = "Warped";
 const char *selectedWin;	// currently selected window
 vector<Plane> planes;
-Plane selectPlane; //the plane the user selected for plane warping
+int selected_plane_id; //the plane the user selected for plane warping
 float dx = 0;  // offset between images
 float dy = 0;
 float dgx = 0; // disparity gradient
@@ -133,6 +133,8 @@ void printhelp()
 		"D     - show diff\n"
 		"W 	   - show GT warped image 2\n"
 		"+     - show confidence measure\n"
+		"=     - warp by selected plane (default=0)\n"
+		"<, >  - cycle through planes\n"
 		"Y, U  - confidence contrast\n"
 		"1-4 - change mode:\n"
 		"  1 - color diff\n"
@@ -228,11 +230,11 @@ void info(Mat imd)
 		sprintf_s(txt, 100, "%d-%s dx=%4.1f dy=%4.1f step=%3.1f aggr %dx%d", 
 			mode+1, modestr[mode], dx, dy, step, aggrsize, aggrsize);
 	}
-	sprintf_s(txt3, 100, "confScale=%.1f (x10)", confScale);
+	sprintf_s(txt3, 100, "Plane I.D.= %d confScale= %.1f (x10)", selected_plane_id, confScale);
 	putText(imd, txt, Point(5, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 	const char *txt2 = "C/V:step  O/P:dgx  Z/X:contrast  N/M:nccsize  E/R:ncceps  F/G:aggr  ?:help  Q:quit";
 	putText(imd, txt2, Point(5, imd.rows-2), FONT_HERSHEY_PLAIN, 0.8, Scalar(120, 180, 180));
-	putText(imd, txt3, Point(600, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
+	putText(imd, txt3, Point(500, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 }
 
 void myImDiff2(Mat a, Mat b, Mat &d)
@@ -554,6 +556,7 @@ void computeConf()
 
 	for (int i = 0; i <= pyrlevels; i++) {
 
+
 		//shift the image to the right and left
 		warpAffine(pyr1[i], pyrL[i], l_shift, pyr1[i].size());
 		warpAffine(pyr1[i], pyrR[i], r_shift, pyr1[i].size());
@@ -644,6 +647,9 @@ void computeConf()
 //opencv built-in functions
 void computeConfLoop(){
 	Pyr pyr_c, pyr_cm, pyr_cp, pyr_conf;
+
+	namedWindow(winConf, CV_WINDOW_AUTOSIZE);
+	setMouseCallback(winConf, onMouse, (void*)winConf);
 
 	//initializing pyramids 
 	pyr_c.resize(pyrlevels+1);
@@ -895,7 +901,7 @@ void warpByGT()
 
 	Mat warped, warped1, diff;
 	warpImageInv(oim1, warped1, gtd, -1);
-	maskOccluded(warped1, warped1, occmask);
+	//maskOccluded(warped1, warped1, occmask);
 	wim1 = warped1;	
 
 }
@@ -904,12 +910,12 @@ void warpByGT()
 //warps an image by a plane
 void planeWarp (Mat src, Mat &dst){
 	//get plane parameters from global user-selected plane
-	float a = selectPlane.a;
-	float b = selectPlane.b;
-	float c = selectPlane.c;
+	float a = planes[selected_plane_id].a;
+	float b = planes[selected_plane_id].b;
+	float c = planes[selected_plane_id].c;
 
 	//create matrix for warping the image & warp it!
-	Mat PW = (Mat_<float>(2,3) << a, b, c, 0.0, 1.0, 0.0);
+	Mat PW = (Mat_<float>(2,3) << (1+a), b, c, 0.0, 1.0, 0.0);
 	warpAffine(src, dst, PW, src.size());
 }
 
@@ -954,8 +960,19 @@ void mainLoop()
 		case '0':
 			reset(); imdiff(); break;
 		case '=':
-			readPlanesFromFile("im0_planeEqns.txt"); 
-			selectPlane = planes[230]; 
+			reset();
+			planeWarp(wim1, wim1);
+			imdiff();
+			break;
+		case '<':
+			reset();
+			selected_plane_id = std::max(0, (selected_plane_id-1));
+			planeWarp(wim1, wim1);
+			imdiff();
+			break;
+		case '>':
+			reset();
+			selected_plane_id = std::min((int)(planes.size()-1), (selected_plane_id+1));
 			planeWarp(wim1, wim1);
 			imdiff();
 			break;
@@ -1060,7 +1077,7 @@ int main(int argc, char ** argv)
 	setvbuf(stdout, (char*)NULL, _IONBF, 0); // fix to flush stdout when called from cygwin
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: %s im1 im2 [groundtruthim2 [occlusionmask [decimationFact [offsx [offsy]]]]\n", argv[0]);
+		fprintf(stderr, "usage: %s im1 im2 [groundtruthim2 [occlusionmask [planeEqns [decimationFact [offsx [offsy]]]]]\n", argv[0]);
 		exit(1);
 	}
 	try {
@@ -1076,12 +1093,14 @@ int main(int argc, char ** argv)
 			ReadFilePFM(gtd, argv[3]);
 		if (argc > 4)
 			occmask = readIm(argv[4]);
-		if (argc > 5)
-			downsample = atoi(argv[5]);
+		if(argc > 5)
+			readPlanesFromFile(argv[5]); 
 		if (argc > 6)
-			offsx = atoi(argv[6]);
+			downsample = atoi(argv[6]);
 		if (argc > 7)
-			offsy = atoi(argv[7]);
+			offsx = atoi(argv[7]);
+		if (argc > 8)
+			offsy = atoi(argv[8]);
 
 		// downsample images
 		if (downsample > 1) {

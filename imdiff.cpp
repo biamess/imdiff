@@ -102,7 +102,9 @@ const char *winConf = "Confidence";
 const char *winWarp = "Warped";
 const char *selectedWin;	// currently selected window
 vector<Plane> planes;
-int selected_plane_id; //the plane the user selected for plane warping
+int selected_plane_id; 	//the plane the user selected for plane warping
+int draw_bounding = 0;	//bool to keep track of whether bounding box for 
+						//the planes should be drawn 	
 float dx = 0;  // offset between images
 float dy = 0;
 float dgx = 0; // disparity gradient
@@ -134,6 +136,7 @@ void printhelp()
 		"W 	   - show GT warped image 2\n"
 		"+     - show confidence measure\n"
 		"=     - warp by selected plane (default=0)\n"
+		"/     - toggle bounding box for plane\n"
 		"<, >  - cycle through planes\n"
 		"Y, U  - confidence contrast\n"
 		"1-4 - change mode:\n"
@@ -185,6 +188,8 @@ void readPlanesFromFile(string filePath){
     	file >> b;
     	file >> c;
 
+    	printf("plane: %d, a = %f, b = %f, c = %f\n", id, a, b, c);
+
     	if( file.eof() ) break; //stop at end of file
 
     	//create a plane:
@@ -192,6 +197,22 @@ void readPlanesFromFile(string filePath){
     	planes.push_back(p); //store in the planes vector
     }
     cout << "Read in " << planes.size() << " planes from " << filePath << endl;
+}
+
+void drawBounding(Mat &src, float scale){
+	Plane p = planes[selected_plane_id];
+	Point upper_left((p.xmin - roi.x)*scale, (p.ymax - roi.y)*scale);
+	Point lower_left((p.xmin - roi.x)*scale, (p.ymin - roi.y)*scale);
+	Point upper_right((p.xmax - roi.x)*scale, (p.ymax - roi.y)*scale);
+	Point lower_right((p.xmax - roi.x)*scale, (p.ymin - roi.y)*scale);
+	Scalar line_color(255, 255, 255);
+
+	int line_thickness = (scale < 1) ? 1 : 2;
+
+	line(src, upper_left, upper_right, line_color, line_thickness);
+	line(src, upper_left, lower_left, line_color, line_thickness);
+	line(src, lower_left, lower_right, line_color, line_thickness);
+	line(src, lower_right, upper_right, line_color, line_thickness);
 }
 
 void computeGradientX(Mat img, Mat &gx)
@@ -306,8 +327,8 @@ void ncc(Mat L, Mat R, Mat &imd) {
 void imdiff(Mat im0, Mat im1, Mat &imd)
 {
 	if (mode == 0 || mode >= nmodes) { // difference of images
-		//addWeighted(im0, diffscale, im1, -diffscale, 128, imd);
-		imd = 128 + diffscale * ((im0 - im1)/2);
+		addWeighted(im0, diffscale/2, im1, -diffscale/2, 128, imd);
+		//imd = Scalar(128, 128, 128) + diffscale * ((im0 - im1)/2);
 		return;
 	}
 	Mat im0g, im1g;
@@ -352,8 +373,11 @@ void imdiff(Mat im0, Mat im1, Mat &imd)
 // print information about image
 void printinfo(Mat img)
 {
+	double min, max;
+	cv::minMaxLoc(img, &min, &max);
 	printf("width=%d, height=%d, channels=%d, pixel type: ",
 		img.cols, img.rows, img.channels());
+	
 	switch(img.depth()) {
 	case CV_8U:	 printf("CV_8U  -  8-bit unsigned int (0..255)\n"); break;
 	case CV_8S:  printf("CV_8S  -  8-bit signed int (-128..127)\n"); break;
@@ -364,14 +388,17 @@ void printinfo(Mat img)
 	case CV_64F: printf("CV_64F - 64-bit double\n"); break;
 	default:     printf("unknown\n");
 	}
+	printf("min value=%.3f..max value=%.3f\n", (float)min, (float)max);
 
 }
 
 Mat pyrImg(Pyr pyr) 
 {
 	Mat im = pyr[0];
-	printf("calling pyImg\n");
+	printf("\ncalling pyImg\n");
 	printinfo(im);
+	printf("\n");
+
 	int w = im.cols, h = im.rows;
 	Mat pim(Size(3*w/2+4, h+30), im.type(), Scalar(30, 10, 10));
 	im.copyTo(pim(Rect(0, 0, w, h)));
@@ -447,9 +474,13 @@ void imdiff()
 	im1T = wim1T(roi);
 	buildPyramid(im1T, pyr1, pyrlevels);
 	
-
+	float scale = 1.0;
 	for (int i = 0; i <= pyrlevels; i++) {
 		imdiff(pyr0[i], pyr1[i], pyrd[i]);
+		if(!planes.empty() && draw_bounding){
+			drawBounding(pyrd[i], scale);
+			scale *= 0.5;
+		}
 	}
 	//printinfo(pyrd[0]);
 	dispPyr(win, pyrd);
@@ -636,7 +667,9 @@ void computeConf()
 		//the absdiff is always positive
 		cm_diff_C1 = LMask.mul(cm_diff_C1); 
 		cp_diff_C1 = RMask.mul(cp_diff_C1);
-		pyrConf[i] = min(cm_diff_C1, cp_diff_C1);
+		Mat min_diff = min(cm_diff_C1, cp_diff_C1);
+		min_diff.convertTo(min_diff, CV_8U, 255);
+		pyrConf[i] = min_diff;
 	}	
 	//display the confidence measure in a new window
 	Mat im = pyrImg(pyrConf);
@@ -690,6 +723,7 @@ void computeConfLoop(){
 			cm_image = abs(cm_image - Scalar(0.5, 0.5, 0.5));
 			cp_image = abs(cp_image - Scalar(0.5, 0.5, 0.5));
 			
+
 			//convert the 3-channel image to a single channel image 
 			//by taking the avg of the 3 color channels
 			sumChannels(c_image, c_image);
@@ -739,6 +773,7 @@ void computeConfLoop(){
 			}
 
 		}
+		conf_image.convertTo(conf_image, CV_8U, 255);
 		pyr_conf[i] = conf_image;
 	}
 	Mat im = pyrImg(pyr_conf);
@@ -901,7 +936,9 @@ void warpByGT()
 
 	Mat warped, warped1, diff;
 	warpImageInv(oim1, warped1, gtd, -1);
-	//maskOccluded(warped1, warped1, occmask);
+	if(!occmask.empty()){
+		maskOccluded(warped1, warped1, occmask);
+	}
 	wim1 = warped1;	
 
 }
@@ -915,7 +952,7 @@ void planeWarp (Mat src, Mat &dst){
 	float c = planes[selected_plane_id].c;
 
 	//create matrix for warping the image & warp it!
-	Mat PW = (Mat_<float>(2,3) << (1+a), b, c, 0.0, 1.0, 0.0);
+	Mat PW = (Mat_<float>(2,3) << (1+a), b, (c + 0.5*a + 0.5*b), 0.0, 1.0, 0.0);
 	warpAffine(src, dst, PW, src.size());
 }
 
@@ -935,6 +972,8 @@ void reset(){
 	wim1 = oim1.clone();
 
 }
+
+
 
 void mainLoop()
 {
@@ -959,30 +998,43 @@ void mainLoop()
 			destroyWindow(selectedWin); break;
 		case '0':
 			reset(); imdiff(); break;
-		case '=':
-			reset();
-			planeWarp(wim1, wim1);
+		case '/':
+			draw_bounding = !draw_bounding;//(draw_bounding + 1)%2;
 			imdiff();
+			break;
+		case '=':
+			if(!planes.empty()){
+				reset();
+				draw_bounding = 1;
+				planeWarp(wim1, wim1);	
+				imdiff();
+			}
 			break;
 		case '<':
-			reset();
-			selected_plane_id = std::max(0, (selected_plane_id-1));
-			planeWarp(wim1, wim1);
-			imdiff();
+			if(!planes.empty()){
+				reset();
+				draw_bounding = 1;
+				selected_plane_id = std::max(0, (selected_plane_id-1));
+				planeWarp(wim1, wim1);
+				imdiff();
+			}
 			break;
 		case '>':
-			reset();
-			selected_plane_id = std::min((int)(planes.size()-1), (selected_plane_id+1));
-			planeWarp(wim1, wim1);
-			imdiff();
+			if(!planes.empty()){
+				reset();
+				draw_bounding = 1;
+				selected_plane_id = std::min((int)(planes.size()-1), (selected_plane_id+1));
+				planeWarp(wim1, wim1);
+				imdiff();
+			}
 			break;
-		case 2424832: case 65361: // left arrow
+		case 2424832: case 65361: case 63234:// left arrow
 			dx -= step; imdiff(); break;
-		case 2555904: case 65363: // right arrow
+		case 2555904: case 65363: case 63235:// right arrow
 			dx += step; imdiff(); break;
-		case 2490368: case 65362: // up arrow
+		case 2490368: case 65362: case 63232:// up arrow
 			dy -= step; imdiff(); break; 
-		case 2621440: case 65364: // down arrow
+		case 2621440: case 65364: case 63233:// down arrow
 			dy += step; imdiff(); break;
 		case 'c': // decrease step
 			step /= 2; imdiff(); break;
@@ -1047,7 +1099,7 @@ void mainLoop()
 	}
 }
 
-Mat readIm(char *fname) 
+Mat readIm(const char *fname) 
 {
 	Mat im = imread(fname, 1);
 	if (im.empty()) { 
@@ -1075,9 +1127,18 @@ void ensureSameSize(Mat &im0, Mat &im1, bool exitIfDifferent=false)
 int main(int argc, char ** argv)
 {
 	setvbuf(stdout, (char*)NULL, _IONBF, 0); // fix to flush stdout when called from cygwin
+	string plane_eqns("planes=");
+	string ground_truth("gt=");
+	string occ_mask("occmask=");
+	string deci_fact("decimate=");
+	string off_x("offx=");
+	string off_y("offy=");
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: %s im1 im2 [groundtruthim2 [occlusionmask [planeEqns [decimationFact [offsx [offsy]]]]]\n", argv[0]);
+		fprintf(stderr, "usage: %s im1 im2 [%s, %s, %s, %s, %s, %s]\n", argv[0],
+			plane_eqns.c_str(), ground_truth.c_str(), occ_mask.c_str(), 
+			deci_fact.c_str(), off_x.c_str(), off_y.c_str());
+
 		exit(1);
 	}
 	try {
@@ -1085,22 +1146,37 @@ int main(int argc, char ** argv)
 		oim1 = readIm(argv[2]);
 		ensureSameSize(oim0, oim1);
 
-
-
 		int downsample = 1; // use 2 for half-size, etc.
 		int offsx = -1, offsy = -1;
-		if (argc > 3)
-			ReadFilePFM(gtd, argv[3]);
-		if (argc > 4)
-			occmask = readIm(argv[4]);
-		if(argc > 5)
-			readPlanesFromFile(argv[5]); 
-		if (argc > 6)
-			downsample = atoi(argv[6]);
-		if (argc > 7)
-			offsx = atoi(argv[7]);
-		if (argc > 8)
-			offsy = atoi(argv[8]);
+
+		//parse user input, works like python default parameters
+		for(int i = 3; i < argc; ++i){
+			string arg = argv[i];
+			
+
+			string match_strings[6] = {	plane_eqns, ground_truth, occ_mask, 
+										deci_fact, off_x, off_y };
+			
+			for(int s = 0; s < 6; ++s){
+				string match_string = match_strings[s];
+				std::size_t found = arg.find(match_string);
+				if(found != std::string::npos){
+					if(match_string == plane_eqns){
+						readPlanesFromFile(arg.substr(found+plane_eqns.size()));
+					}else if(match_string == ground_truth){
+						ReadFilePFM(gtd, arg.substr(found+ground_truth.size()));
+					}else if(match_string == occ_mask){
+						occmask = imread(arg.substr(found+occ_mask.size()));
+					}else if(match_string == deci_fact){
+						downsample = atoi(arg.substr(found+deci_fact.size()).c_str());
+					}else if(match_string == off_x){
+						offsx = atoi(arg.substr(found+off_x.size()).c_str());
+					}else if(match_string == off_y){
+						offsy = atoi(arg.substr(found+off_y.size()).c_str());
+					}
+				}
+			}
+		}
 
 		// downsample images
 		if (downsample > 1) {

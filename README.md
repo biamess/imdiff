@@ -1,12 +1,12 @@
 # cv-vis
 
-To download run `git clone https://github.com/mthstanley/cv-vis.git`
+To download run `git clone https://github.com/biamess/imdiff.git`
 
 ## User Information
 
 ### About
 
-This tool provides a visualization of pixel-wise matching costs between two images, for use in stereo vision research. The user can apply transformations to one of the two images in order to line up corresponding objects in the scene. The tool performs best on a rectified stereo pair. It is a web application written using JavaScript and WebGL. 
+This tool provides a visualization of pixel-wise matching costs between two images, for use in stereo vision research. The user can apply transformations to one of the two images in order to line up corresponding objects in the scene. The tool performs best on a rectified stereo pair. It is a native application written in c++ using OpenCV. 
 
 The user can select between several methods of computing the matching cost between two images: 
 `color difference`

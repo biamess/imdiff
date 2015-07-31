@@ -104,10 +104,16 @@ const char *selectedWin;	// currently selected window
 vector<Plane> planes;
 int selected_plane_id; 	//the plane the user selected for plane warping
 int draw_bounding = 0;	//bool to keep track of whether bounding box for 
-						//the planes should be drawn 	
+						//the planes should be drawn 
+
+int warp_by_gtd = 0;	//bool for whether ground truth warping should 
+						//be applied	
+
+int warp_by_planes;
 float dx = 0;  // offset between images
 float dy = 0;
-float dgx = 0; // disparity gradient
+float dgx = 0; // disparity gradient x
+float dgy = 0; // disparity gradient y
 float ds = 1;  // motion control multiplier
 int xonly = 0; // constrain motion in x dir
 float startx;
@@ -133,7 +139,7 @@ void printhelp()
 		"Space - reset offset\n"
 		"A, S  - show (blink) orig images\n"
 		"D     - show diff\n"
-		"W 	   - show GT warped image 2\n"
+		"W 	   - toggle GT warped image 2\n"
 		"+     - show confidence measure\n"
 		"=     - warp by selected plane (default=0)\n"
 		"/     - toggle bounding box for plane\n"
@@ -215,6 +221,183 @@ void drawBounding(Mat &src, float scale){
 	line(src, lower_right, upper_right, line_color, line_thickness);
 }
 
+// bilinear interpolation of ints in 0..255
+// taken from Daniel's warp.cpp
+int linearInterpi(float fx, float fy, int v00, int v01, int v10, int v11)
+{
+	float w00 = (1-fx)*(1-fy);
+	float w01 = (1-fx)*fy;
+	float w10 = fx*(1-fy);
+	float w11 = fx*fy;
+
+	float v = w00 * v00 + w01 * v01 + w10 * v10 + w11 * v11;
+	int vr = round(v);
+	return max(0, min(255, vr));
+}
+
+// added by Matt Stanley & Bianca Messner 2015-07-15
+// warps an image by it's ground truth disparities
+void warpImageInv(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
+{
+	// get dimensions and type of src image
+	int width = src.size().width, height = src.size().height;
+	int type = src.type();	
+	int nB = src.channels();
+
+	// make sure src image is a color image									
+	if(nB != 3)
+	{
+		cout << "expected color image" << endl;
+		return;
+	}
+
+	// initialize the dst image to be bright pink
+	dst = Mat(height, width, type, Scalar(255, 128, 255));
+
+	
+	int n = 0;
+	// begin pixel loop
+	for (int y = 0; y < height; ++y)	// rows
+	{
+		for (int x = 0; x < width; ++x)	// cols
+		{
+			float dx = scalex * dispx.at<float>(y, x); // index into dispx using (row, col)=(y, x)
+
+			if(dx == UNK)
+				continue;
+			n++;
+
+			float xx = x + dx;
+			float yy = y;
+
+			int ixr = (int)round(xx);
+			int iyr = (int)round(yy);
+
+			if(ixr < 0 || ixr >= width || iyr < 0 || iyr >= height)
+				continue;
+
+			int ix0 = max(0, (int)floor(xx));
+			int iy0 = max(0, (int)floor(yy));
+			int ix1 = min(width-1, ix0+1);
+			int iy1 = min(height-1, iy0+1);
+
+			float fx = xx - ix0;
+			float fy = yy - iy0;
+
+			for(int b = 0; b < nB; ++b){
+				dst.at<Vec3b>(y,x)[b] = linearInterpi(fx, fy,
+													src.at<Vec3b>(iy0, ix0)[b],
+													src.at<Vec3b>(iy1, ix0)[b],
+													src.at<Vec3b>(iy0, ix1)[b],
+													src.at<Vec3b>(iy1, ix1)[b]
+													);
+			}
+		}
+	}
+	// end pixel loop
+}
+
+
+// added by Matt Stanley & Bianca Messner 2015-07-15
+// warps an image by it's ground truth disparities
+// uses opencv's remap() function
+void warpImageRemap(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
+{
+	// get dimensions and type of src image
+	int width = src.size().width, height = src.size().height;
+	int type = src.type();	
+	int nB = src.channels();
+
+	// make sure src image is a color image									
+	if(nB != 3)
+	{
+		cout << "expected color image" << endl;
+		return;
+	}
+
+	Mat map = Mat_<Point_<float> >(height, width);
+	// initialize the dst image to be bright pink
+	dst = Mat(height, width, type, Scalar(255, 128, 255));
+	Mat emptyMap;
+
+	float gtValue;
+
+	// begin building map
+	for(int i=0; i<height; ++i)
+	{
+		for (int j=0; j < width; ++j)
+		{
+			gtValue = scalex * (dispx.at<float>(i, j));
+			if (!((j+gtValue) > width)){ // if not out of bounds...
+				map.at<Point_<float> >(i, j) = Point(j+gtValue, i); //store the coordinates of the point in the 
+														   			//source image that contains the pixel we want in
+														   			//the destination image
+			}
+		}
+	}
+	// end building map
+	remap(src, dst, map, emptyMap, INTER_LINEAR);
+}
+
+
+// added by Bianca Messner & Matt Stanley 2015-07-16
+// given an occlusion mask sets the corresponding pixels
+// in the src image to be the color (0, 255, 0)
+void maskOccluded(Mat src, Mat &dst, Mat occlusionmask) {
+	// get src image dimensions
+	int width = src.size().width, height = src.size().height;
+	int type = src.type();	
+
+	// create a mask for non-occluded areas and
+	// occluded areas (both half and full)
+	Mat nonOccMask = (occlusionmask == 255)/255;
+	Mat occAreaMask = (occlusionmask != 255)/255;
+
+	// cut out colored pieces in the occluded areas
+	Mat colorMat = Mat(height, width, type, Scalar(255, 255, 255));
+	Mat colorOccArea = occAreaMask.mul(colorMat);
+
+	// cut out the color values in the src image
+	// that are occluded
+	Mat srcNonOcc = src.mul(nonOccMask);
+
+	// fill in occluded areas with color
+	dst = srcNonOcc + colorOccArea;
+}
+
+//added by Matt Stanley & Bianca Messner 7/10/2015
+void warpByGT(Mat src, Mat &dst, Mat gtd, Mat occlusion_mask)
+{
+	if(gtd.empty()){
+		cout << "No Ground Truth image specified" << endl;
+		return;
+	}
+	dst = Mat::zeros(src.size().height, src.size().width, src.type());
+	warpImageInv(src, dst, gtd, -1);
+	if(!occlusion_mask.empty()){
+		maskOccluded(dst, dst, occlusion_mask);
+	}
+}
+
+// added by Bianca Messner & Matt Stanley 2015-07-20
+//warps an image by a plane
+void planeWarp(){
+	//get plane parameters from global user-selected plane
+	float a = planes[selected_plane_id].a;
+	float b = planes[selected_plane_id].b;
+	float c = planes[selected_plane_id].c;
+
+	dgx = a;
+	dgy = b;
+	dx = c;
+
+	//create matrix for warping the image & warp it!
+	/*
+	Mat PW = (Mat_<float>(2,3) << (1+a), b, (c + 0.5*a + 0.5*b), 0.0, 1.0, 0.0);
+	warpAffine(src, dst, PW, src.size());
+	*/
+}
+
 void computeGradientX(Mat img, Mat &gx)
 {
 	int gdepth = CV_32F; // data type of gradient images
@@ -242,14 +425,14 @@ void info(Mat imd)
 	char txt[100];
 	char txt3[100];
 	if (mode == 0) { // color diff
-		sprintf_s(txt, 100, "1-diff * %.1f  dx=%4.1f dy=%4.1f step=%3.1f", 
-			diffscale, dx, dy, step);
+		sprintf_s(txt, 100, "1-diff * %.1f  dx=%4.2f dy=%4.2f dgx=%4.5f dgy=%4.5f step=%3.1f", 
+			diffscale, dx, dy, dgx, dgy, step);
 	} else if (mode == 1) { // NCC
-		sprintf_s(txt, 100, "2-NCC %dx%d dx=%4.1f dy=%4.1f step=%3.1f aggr %dx%d ncceps=%5g", 
-			nccsize, nccsize, dx, dy, step, aggrsize, aggrsize, ncceps);
+		sprintf_s(txt, 100, "2-NCC %dx%d dx=%4.2f dy=%4.2f dgx=%4.5f dgy=%4.5f step=%3.1f aggr %dx%d ncceps=%5g", 
+			nccsize, nccsize, dx, dy, dgx, dgy, step, aggrsize, aggrsize, ncceps);
 	} else {
-		sprintf_s(txt, 100, "%d-%s dx=%4.1f dy=%4.1f step=%3.1f aggr %dx%d", 
-			mode+1, modestr[mode], dx, dy, step, aggrsize, aggrsize);
+		sprintf_s(txt, 100, "%d-%s dx=%4.2f dy=%4.2f dgx=%4.5f dgy=%4.5f step=%3.1f aggr %dx%d", 
+			mode+1, modestr[mode], dx, dy, dgx, dgy, step, aggrsize, aggrsize);
 	}
 	sprintf_s(txt3, 100, "Plane I.D.= %d confScale= %.1f (x10)", selected_plane_id, confScale);
 	putText(imd, txt, Point(5, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
@@ -465,12 +648,16 @@ void imdiff()
 	// crop the smaller window from the transformed image
 	// less efficient, but difference in performance isn't 
 	// very noticeable
-
+	Mat wim1T, im1T;
+	wim1T = oim1.clone();
+	if(warp_by_gtd){
+		warpByGT(oim1, wim1T, gtd, occmask);
+	}
 
 	float s = 1;
-	Mat wim1T, im1T;
-	Mat transform = (Mat_<float>(2,3) << s, dgx, dx-dgx*im0.rows/2, 0, s, dy);
-	warpAffine(wim1, wim1T, transform, oim1.size());
+
+	Mat transform = (Mat_<float>(2,3) << s+dgx, dgy, (dx), 0, s, dy);
+	warpAffine(wim1T, wim1T, transform, oim1.size());
 	im1T = wim1T(roi);
 	buildPyramid(im1T, pyr1, pyrlevels);
 	
@@ -780,186 +967,11 @@ void computeConfLoop(){
 	imshow(winConf, im * confScale * 10);
 }
 
-
-// bilinear interpolation of ints in 0..255
-// taken from Daniel's warp.cpp
-int linearInterpi(float fx, float fy, int v00, int v01, int v10, int v11)
-{
-	float w00 = (1-fx)*(1-fy);
-	float w01 = (1-fx)*fy;
-	float w10 = fx*(1-fy);
-	float w11 = fx*fy;
-
-	float v = w00 * v00 + w01 * v01 + w10 * v10 + w11 * v11;
-	int vr = round(v);
-	return max(0, min(255, vr));
-}
-
-
-// added by Matt Stanley & Bianca Messner 2015-07-15
-// warps an image by it's ground truth disparities
-void warpImageInv(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
-{
-	// get dimensions and type of src image
-	int width = src.size().width, height = src.size().height;
-	int type = src.type();	
-	int nB = src.channels();
-
-	// make sure src image is a color image									
-	if(nB != 3)
-	{
-		cout << "expected color image" << endl;
-		return;
-	}
-
-	// initialize the dst image to be bright pink
-	dst = Mat(height, width, type, Scalar(255, 128, 255));
-
-	
-	int n = 0;
-	// begin pixel loop
-	for (int y = 0; y < height; ++y)	// rows
-	{
-		for (int x = 0; x < width; ++x)	// cols
-		{
-			float dx = scalex * dispx.at<float>(y, x); // index into dispx using (row, col)=(y, x)
-
-			if(dx == UNK)
-				continue;
-			n++;
-
-			float xx = x + dx;
-			float yy = y;
-
-			int ixr = (int)round(xx);
-			int iyr = (int)round(yy);
-
-			if(ixr < 0 || ixr >= width || iyr < 0 || iyr >= height)
-				continue;
-
-			int ix0 = max(0, (int)floor(xx));
-			int iy0 = max(0, (int)floor(yy));
-			int ix1 = min(width-1, ix0+1);
-			int iy1 = min(height-1, iy0+1);
-
-			float fx = xx - ix0;
-			float fy = yy - iy0;
-
-			for(int b = 0; b < nB; ++b){
-				dst.at<Vec3b>(y,x)[b] = linearInterpi(fx, fy,
-													src.at<Vec3b>(iy0, ix0)[b],
-													src.at<Vec3b>(iy1, ix0)[b],
-													src.at<Vec3b>(iy0, ix1)[b],
-													src.at<Vec3b>(iy1, ix1)[b]
-													);
-			}
-		}
-	}
-	// end pixel loop
-}
-
-
-// added by Matt Stanley & Bianca Messner 2015-07-15
-// warps an image by it's ground truth disparities
-// uses opencv's remap() function
-void warpImageRemap(Mat src, Mat &dst, Mat dispx, float scalex=1.0)
-{
-	// get dimensions and type of src image
-	int width = src.size().width, height = src.size().height;
-	int type = src.type();	
-	int nB = src.channels();
-
-	// make sure src image is a color image									
-	if(nB != 3)
-	{
-		cout << "expected color image" << endl;
-		return;
-	}
-
-	Mat map = Mat_<Point_<float> >(height, width);
-	// initialize the dst image to be bright pink
-	dst = Mat(height, width, type, Scalar(255, 128, 255));
-	Mat emptyMap;
-
-	float gtValue;
-
-	// begin building map
-	for(int i=0; i<height; ++i)
-	{
-		for (int j=0; j < width; ++j)
-		{
-			gtValue = scalex * (dispx.at<float>(i, j));
-			if (!((j+gtValue) > width)){ // if not out of bounds...
-				map.at<Point_<float> >(i, j) = Point(j+gtValue, i); //store the coordinates of the point in the 
-														   			//source image that contains the pixel we want in
-														   			//the destination image
-			}
-		}
-	}
-	// end building map
-	remap(src, dst, map, emptyMap, INTER_LINEAR);
-}
-
-
-// added by Bianca Messner & Matt Stanley 2015-07-16
-// given an occlusion mask sets the corresponding pixels
-// in the src image to be the color (0, 255, 0)
-void maskOccluded(Mat src, Mat &dst, Mat occlusionmask) {
-	// get src image dimensions
-	int width = src.size().width, height = src.size().height;
-	int type = src.type();	
-
-	// create a mask for non-occluded areas and
-	// occluded areas (both half and full)
-	Mat nonOccMask = (occlusionmask == 255)/255;
-	Mat occAreaMask = (occlusionmask != 255)/255;
-
-	// cut out colored pieces in the occluded areas
-	Mat colorMat = Mat(height, width, type, Scalar(255, 255, 255));
-	Mat colorOccArea = occAreaMask.mul(colorMat);
-
-	// cut out the color values in the src image
-	// that are occluded
-	Mat srcNonOcc = src.mul(nonOccMask);
-
-	// fill in occluded areas with color
-	dst = srcNonOcc + colorOccArea;
-}
-
-//added by Matt Stanley & Bianca Messner 7/10/2015
-void warpByGT()
-{
-	if(gtd.empty()){
-		cout << "No Ground Truth image specified" << endl;
-		return;
-	}
-
-	Mat warped, warped1, diff;
-	warpImageInv(oim1, warped1, gtd, -1);
-	if(!occmask.empty()){
-		maskOccluded(warped1, warped1, occmask);
-	}
-	wim1 = warped1;	
-
-}
-
-// added by Bianca Messner & Matt Stanley 2015-07-20
-//warps an image by a plane
-void planeWarp (Mat src, Mat &dst){
-	//get plane parameters from global user-selected plane
-	float a = planes[selected_plane_id].a;
-	float b = planes[selected_plane_id].b;
-	float c = planes[selected_plane_id].c;
-
-	//create matrix for warping the image & warp it!
-	Mat PW = (Mat_<float>(2,3) << (1+a), b, (c + 0.5*a + 0.5*b), 0.0, 1.0, 0.0);
-	warpAffine(src, dst, PW, src.size());
-}
-
 void reset(){
 	dx = 0;  // offset between images
 	dy = 0;
 	dgx = 0; // disparity gradient
+	dgy = 0; // disparity gradient
 	ds = 1; 
 	diffscale = 1;
 	confScale = 1;
@@ -970,7 +982,7 @@ void reset(){
 	diffmin = 0; // 0 or 128 to clip negative response
 	pixshift = 1; // amount (in pixels) to shift the image by 
 	wim1 = oim1.clone();
-
+	warp_by_gtd = 0;
 }
 
 
@@ -1006,7 +1018,7 @@ void mainLoop()
 			if(!planes.empty()){
 				reset();
 				draw_bounding = 1;
-				planeWarp(wim1, wim1);	
+				planeWarp();	
 				imdiff();
 			}
 			break;
@@ -1015,7 +1027,7 @@ void mainLoop()
 				reset();
 				draw_bounding = 1;
 				selected_plane_id = std::max(0, (selected_plane_id-1));
-				planeWarp(wim1, wim1);
+				planeWarp();
 				imdiff();
 			}
 			break;
@@ -1024,7 +1036,7 @@ void mainLoop()
 				reset();
 				draw_bounding = 1;
 				selected_plane_id = std::min((int)(planes.size()-1), (selected_plane_id+1));
-				planeWarp(wim1, wim1);
+				planeWarp();
 				imdiff();
 			}
 			break;
@@ -1044,6 +1056,10 @@ void mainLoop()
 			dgx += 0.02f; imdiff(); break;
 		case 'p': // decrease x disp gradient
 			dgx -= 0.02f; imdiff(); break;
+		case '[': // increase y disp gradient
+			dgy += 0.02f; imdiff(); break;
+		case ']': // decrease y disp gradient
+			dgy -= 0.02f; imdiff(); break;
 		case ' ': // reset
 			dx = 0; dy = 0; dgx = 0; diffscale = 1; nccsize = 3; imdiff(); break;
 		case 'a': // show original left image
@@ -1055,7 +1071,9 @@ void mainLoop()
 		case '+': // display confidence image
 			computeConfLoop(); /*computeConf();*/ break;
 		case 'w':
-			warpByGT(); imdiff(); break;
+			warp_by_gtd = !warp_by_gtd;
+			imdiff(); 
+			break;
 		case 'y':
 			confScale += 0.10; imdiff(); break;
 		case 'u':

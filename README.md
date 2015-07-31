@@ -56,7 +56,12 @@ usage: ./imdiff im1 im2 [planes=, gt=, occmask=, decimate=, offx=, offy=]
 
 Note: The command line parser does not expect spaces before/after the equals signs. 
 
+#### Dependencies
 
+This program makes use of a pfm reader which it maust be able to access in order to compile. This pfm reader can be found on github. To download run `git clone https://github.com/mthstanley/pfmLib.git`
+
+### Known bugs:
+	-translation of warped by plane images are off by several pixels 
 
  
 

@@ -15,8 +15,6 @@ The user can select between several methods of computing the matching cost betwe
 
 ### Usage
 
-
-
 #### Key Bindings
 
 | Key           | Effect                                   |
@@ -30,7 +28,7 @@ The user can select between several methods of computing the matching cost betwe
 |Space          |reset offset                              |
 |A, S           |show (blink) orig images                  |
 |D              |show diff                                 |
-|W              |show GT warped image 2                    |
+|W              |toggle GT warped image 2                  |
 |+              |show confidence measure                   |
 |=              |warp by selected plane (default=0)        |
 |/              |toggle bounding box for plane             |
@@ -50,11 +48,15 @@ The user can select between several methods of computing the matching cost betwe
 |(-)            |close current window                      |
 |Esc, Q         |quit                                      |
 
-## Developer Information
+#### Command Line
 
-### About WebGL
+To run the application from the command line:
 
-### Application Structure 
+usage: ./imdiff im1 im2 [planes=, gt=, occmask=, decimate=, offx=, offy=]
+
+Note: The command line parser does not expect spaces before/after the equals signs. 
+
+
 
  
 

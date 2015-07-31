@@ -80,8 +80,8 @@ struct Plane {
 typedef vector<Mat> Pyr;
 
 Mat oim0, oim1;       // original images
+Mat oim1_gtd_warped;
 Rect roi;             // cropping rectangle
-Mat wim0, wim1;		  // warped images at original resolution
 Mat im0, im1;         // cropped images
 Mat gtd;			  // ground truth disparity
 Mat occmask;		  // occlusion mask
@@ -651,7 +651,7 @@ void imdiff()
 	Mat wim1T, im1T;
 	wim1T = oim1.clone();
 	if(warp_by_gtd){
-		warpByGT(oim1, wim1T, gtd, occmask);
+		wim1T = oim1_gtd_warped.clone();
 	}
 
 	float s = 1;
@@ -981,7 +981,6 @@ void reset(){
 	aggrsize = 1;
 	diffmin = 0; // 0 or 128 to clip negative response
 	pixshift = 1; // amount (in pixels) to shift the image by 
-	wim1 = oim1.clone();
 	warp_by_gtd = 0;
 }
 
@@ -1183,6 +1182,7 @@ int main(int argc, char ** argv)
 						readPlanesFromFile(arg.substr(found+plane_eqns.size()));
 					}else if(match_string == ground_truth){
 						ReadFilePFM(gtd, arg.substr(found+ground_truth.size()));
+						warpByGT(oim1, oim1_gtd_warped, gtd, occmask);
 					}else if(match_string == occ_mask){
 						occmask = imread(arg.substr(found+occ_mask.size()));
 					}else if(match_string == deci_fact){
@@ -1216,8 +1216,6 @@ int main(int argc, char ** argv)
 		}
 		im0 = oim0(roi);
 		im1 = oim1(roi);
-		wim0 = oim0.clone();
-		wim1 = oim1.clone();
 
 		// determine number of levels in the pyramid
 		int smallestpyr = 20; // size of smallest pyramid image

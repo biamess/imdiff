@@ -438,7 +438,7 @@ void info(Mat imd)
 	putText(imd, txt, Point(5, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 	const char *txt2 = "C/V:step  O/P:dgx  Z/X:contrast  N/M:nccsize  E/R:ncceps  F/G:aggr  ?:help  Q:quit";
 	putText(imd, txt2, Point(5, imd.rows-2), FONT_HERSHEY_PLAIN, 0.8, Scalar(120, 180, 180));
-	putText(imd, txt3, Point(500, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
+	putText(imd, txt3, Point(650, imd.rows-15), FONT_HERSHEY_PLAIN, 0.8, Scalar(200, 255, 255));
 }
 
 void myImDiff2(Mat a, Mat b, Mat &d)
@@ -650,8 +650,8 @@ void imdiff()
 	// very noticeable
 	Mat wim1T, im1T;
 	wim1T = oim1.clone();
-	if(warp_by_gtd){
-		wim1T = oim1_gtd_warped.clone();
+	if(warp_by_gtd && !gtd.empty()){	// if we want to warp by ground truth
+		wim1T = oim1_gtd_warped.clone();	// use the ground truth warped image
 	}
 
 	float s = 1;
